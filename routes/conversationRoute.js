@@ -3,11 +3,20 @@ const router = express.Router();
 const conversationController = require('../controllers/conversationController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
+// Logging middleware
+router.use((req, res, next) => {
+    console.log(`Conversation route: ${req.method} ${req.url}`);
+    next();
+});
+
 // Áp dụng middleware xác thực cho tất cả các routes
 router.use(authMiddleware);
 
 // Lấy danh sách cuộc trò chuyện
-router.get('/', conversationController.getConversations);
+router.get('/', (req, res, next) => {
+    console.log('GET /conversations route hit');
+    conversationController.getConversations(req, res, next);
+});
 
 // Tạo cuộc trò chuyện mới
 router.post('/', conversationController.createConversation);

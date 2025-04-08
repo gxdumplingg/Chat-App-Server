@@ -14,6 +14,17 @@ const io = socketIo(server, {
     }
 });
 
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Logging middleware
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    next();
+});
+
 // Kết nối MongoDB
 mongoose.connect('mongodb://127.0.0.1:27017/chat-app', {
     useNewUrlParser: true,
@@ -28,11 +39,6 @@ mongoose.connect('mongodb://127.0.0.1:27017/chat-app', {
     process.exit(1); // Thoát ứng dụng nếu không thể kết nối
 });
 
-// Middleware
-app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-
 // Routes
 const authRoute = require('./routes/authRoute');
 app.use('/auth', authRoute);
@@ -40,11 +46,11 @@ app.use('/auth', authRoute);
 const userRoute = require('./routes/userRoute');
 app.use('/users', userRoute);
 
-const messageRoute = require("./routes/messageRoute");
-app.use("/message", messageRoute);
+const messageRoute = require('./routes/messageRoute');
+app.use('/message', messageRoute);
 
-const conversationRoute = require("./routes/conversationRoute");
-app.use("/conversations", conversationRoute);
+const conversationRoute = require('./routes/conversationRoute');
+app.use('/conversations', conversationRoute);
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
@@ -96,6 +102,12 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('A user disconnected');
     });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ message: 'Something broke!' });
 });
 
 // Khởi động server
