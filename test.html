@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <title>WebSocket Test</title>
+        <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 20px;
+            }
+
+            #messages {
+                height: 300px;
+                overflow-y: auto;
+                border: 1px solid #ccc;
+                padding: 10px;
+                margin-bottom: 10px;
+            }
+
+            .message {
+                margin-bottom: 5px;
+                padding: 5px;
+                border-radius: 5px;
+            }
+
+            .your-message {
+                background-color: #e3f2fd;
+                text-align: right;
+            }
+
+            .other-message {
+                background-color: #f5f5f5;
+            }
+
+            input,
+            button {
+                padding: 10px;
+                margin-right: 5px;
+            }
+        </style>
+    </head>
+
+    <body>
+        <h1>WebSocket Test</h1>
+        <div>
+            <input type="text" id="conversationId" placeholder="Conversation ID" value="67f62e91187ae1f0f1bdd00f">
+            <input type="text" id="userId" placeholder="User ID">
+            <button onclick="joinRoom()">Join Room</button>
+        </div>
+        <div id="messages"></div>
+        <div>
+            <input type="text" id="messageInput" placeholder="Type a message">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+
+        <script>
+            let socket;
+            let currentUserId;
+
+            function joinRoom() {
+                const conversationId = document.getElementById('conversationId').value;
+                currentUserId = document.getElementById('userId').value;
+
+                console.log('Connecting to Socket.IO...');
+                socket = io('http://localhost:3000', {
+                    auth: {
+                        token: 'YOUR_TOKEN_HERE' // Thêm token nếu cần
+                    }
+                });
+
+                socket.on('connect', () => {
+                    console.log('Connected to server');
+                    socket.emit('joinConversation', conversationId);
+                    document.getElementById('messages').innerHTML += `<div class="message">Joined conversation: ${conversationId}</div>`;
+                });
+
+                socket.on('newMessage', (message) => {
+                    console.log('New message:', message);
+                    const isYourMessage = message.senderId === currentUserId;
+                    const messageClass = isYourMessage ? 'your-message' : 'other-message';
+                    const senderText = isYourMessage ? '(You)' : `(${message.senderId})`;
+
+                    document.getElementById('messages').innerHTML += `
+                        <div class="message ${messageClass}">
+                            ${senderText}: ${message.text}
+                        </div>
+                    `;
+                });
+
+                socket.on('error', (error) => {
+                    console.error('Socket error:', error);
+                });
+
+                socket.on('disconnect', () => {
+                    console.log('Disconnected from server');
+                });
+            }
+
+            function sendMessage() {
+                const message = document.getElementById('messageInput').value;
+                const conversationId = document.getElementById('conversationId').value;
+
+                const messageData = {
+                    conversationId: conversationId,
+                    senderId: currentUserId,
+                    text: message,
+                    messageType: 'text'
+                };
+
+                console.log('Sending message:', messageData);
+                socket.emit('sendMessage', messageData);
+
+                document.getElementById('messageInput').value = '';
+            }
+        </script>
+    </body>
+
+</html>

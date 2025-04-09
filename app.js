@@ -4,12 +4,13 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*", // Thay đổi thành domain của Flutter app trong môi trường production
+        origin: "*",
         methods: ["GET", "POST"]
     }
 });
@@ -26,17 +27,17 @@ app.use((req, res, next) => {
 });
 
 // Kết nối MongoDB
-mongoose.connect('mongodb://127.0.0.1:27017/chat-app', {
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/chat-app', {
     useNewUrlParser: true,
     useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 30000, // Tăng timeout lên 30 giây
-    socketTimeoutMS: 45000, // Tăng socket timeout
-    family: 4 // Force IPv4
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
+    family: 4
 }).then(() => {
     console.log('MongoDB connected successfully');
 }).catch(err => {
     console.error('MongoDB connection error:', err);
-    process.exit(1); // Thoát ứng dụng nếu không thể kết nối
+    process.exit(1);
 });
 
 // Routes
@@ -54,63 +55,103 @@ app.use('/conversations', conversationRoute);
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-    console.log('A user connected');
+    console.log('New client connected:', socket.id);
 
-    // Join room based on user ID
-    socket.on('join', (userId) => {
-        socket.join(userId);
-        console.log(`User ${userId} joined their room`);
+    // Join conversation room
+    socket.on('joinConversation', (conversationId) => {
+        socket.join(conversationId);
+        console.log(`User joined conversation: ${conversationId}`);
     });
 
-    // Handle sending messages
-    socket.on('send_message', async (messageData) => {
+    // Leave conversation room
+    socket.on('leaveConversation', (conversationId) => {
+        socket.leave(conversationId);
+        console.log(`User left conversation: ${conversationId}`);
+    });
+
+    // Send message
+    socket.on('sendMessage', async (data) => {
         try {
-            // Lưu tin nhắn vào database
-            const message = new Message(messageData);
+            const { conversationId, senderId, text, messageType = 'text', attachments = [] } = data;
+
+            // Lưu message vào database
+            const Message = require('./models/Message');
+            const message = new Message({
+                conversationId,
+                senderId,
+                text,
+                messageType,
+                attachments,
+                status: new Map()
+            });
             await message.save();
 
             // Cập nhật lastMessage của conversation
-            await Conversation.findByIdAndUpdate(
-                messageData.conversationId,
-                { lastMessage: message._id, updatedAt: Date.now() }
-            );
+            const Conversation = require('./models/Conversation');
+            await Conversation.findByIdAndUpdate(conversationId, {
+                lastMessage: message._id,
+                updatedAt: new Date()
+            });
 
-            // Gửi tin nhắn đến tất cả người dùng trong conversation
-            io.to(messageData.conversationId).emit('new_message', message);
+            // Gửi message đến tất cả users trong conversation
+            io.to(conversationId).emit('newMessage', message);
         } catch (error) {
             console.error('Error sending message:', error);
+            socket.emit('error', { message: 'Error sending message' });
+        }
+    });
+
+    // Update message status
+    socket.on('updateMessageStatus', async (data) => {
+        try {
+            const { messageId, userId, status } = data;
+            const Message = require('./models/Message');
+            const message = await Message.findById(messageId);
+
+            if (message) {
+                message.status.set(userId, status);
+                await message.save();
+
+                // Gửi cập nhật status đến tất cả users trong conversation
+                io.to(message.conversationId.toString()).emit('messageStatusUpdated', {
+                    messageId,
+                    userId,
+                    status
+                });
+            }
+        } catch (error) {
+            console.error('Error updating message status:', error);
         }
     });
 
     // Handle typing status
     socket.on('typing', (data) => {
-        socket.to(data.conversationId).emit('user_typing', {
+        socket.to(data.conversationId).emit('userTyping', {
             userId: data.userId,
             isTyping: data.isTyping
         });
     });
 
     // Handle user status
-    socket.on('update_status', (data) => {
-        socket.broadcast.emit('user_status_changed', {
+    socket.on('updateUserStatus', (data) => {
+        socket.broadcast.emit('userStatusChanged', {
             userId: data.userId,
             status: data.status
         });
     });
 
-    // Handle disconnection
+    // Disconnect
     socket.on('disconnect', () => {
-        console.log('A user disconnected');
+        console.log('Client disconnected:', socket.id);
     });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
-    res.status(500).json({ message: 'Something broke!' });
+    res.status(500).json({ message: 'Something went wrong!' });
 });
 
-// Khởi động server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);

@@ -61,4 +61,52 @@ exports.login = async (req, res) => {
             error: error.message
         });
     }
+};
+
+exports.register = async (req, res) => {
+    try {
+        const { email, password, username, avatar, status } = req.body;
+
+        // Kiểm tra các trường bắt buộc
+        if (!email || !password || !username) {
+            return res.status(400).json({ message: 'Email, password and username are required' });
+        }
+
+        // Kiểm tra email đã tồn tại chưa
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ message: 'Email already exists' });
+        }
+
+        // Mã hóa password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Tạo user mới
+        const user = new User({
+            email,
+            password: hashedPassword,
+            username,
+            avatar: avatar || 'https://example.com/default-avatar.jpg',
+            status: status || 'active'
+        });
+
+        // Lưu user vào database
+        await user.save();
+
+        res.status(201).json({
+            message: 'User registered successfully',
+            user: {
+                email: user.email,
+                username: user.username,
+                avatar: user.avatar,
+                status: user.status
+            }
+        });
+    } catch (error) {
+        console.error('Register error:', error);
+        res.status(500).json({
+            message: 'Internal server error',
+            error: error.message
+        });
+    }
 }; 
