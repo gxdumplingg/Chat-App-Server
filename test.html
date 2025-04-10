@@ -3,7 +3,7 @@
 
     <head>
         <meta charset="UTF-8">
-        <title>WebSocket Test</title>
+        <title>Chat Test</title>
         <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
         <style>
             body {
@@ -35,19 +35,49 @@
                 background-color: #f5f5f5;
             }
 
+            .system-message {
+                background-color: #ffebee;
+                text-align: center;
+                font-style: italic;
+            }
+
             input,
             button {
                 padding: 10px;
                 margin-right: 5px;
             }
+
+            #conversations {
+                margin-bottom: 20px;
+                padding: 10px;
+                border: 1px solid #ccc;
+            }
+
+            .conversation {
+                padding: 10px;
+                border-bottom: 1px solid #eee;
+                cursor: pointer;
+            }
+
+            .conversation:hover {
+                background-color: #f5f5f5;
+            }
+
+            .conversation.active {
+                background-color: #e3f2fd;
+            }
         </style>
     </head>
 
     <body>
-        <h1>WebSocket Test</h1>
+        <h1>Chat Test</h1>
         <div>
-            <input type="text" id="conversationId" placeholder="Conversation ID" value="67f62e91187ae1f0f1bdd00f">
             <input type="text" id="userId" placeholder="User ID">
+            <button onclick="connect()">Connect</button>
+        </div>
+        <div id="conversations"></div>
+        <div>
+            <input type="text" id="conversationId" placeholder="Conversation ID">
             <button onclick="joinRoom()">Join Room</button>
         </div>
         <div id="messages"></div>
@@ -59,22 +89,40 @@
         <script>
             let socket;
             let currentUserId;
+            let currentConversationId;
 
-            function joinRoom() {
-                const conversationId = document.getElementById('conversationId').value;
+            function connect() {
                 currentUserId = document.getElementById('userId').value;
+                if (!currentUserId) {
+                    alert('Please enter User ID');
+                    return;
+                }
 
                 console.log('Connecting to Socket.IO...');
-                socket = io('http://localhost:3000', {
-                    auth: {
-                        token: 'YOUR_TOKEN_HERE' // Thêm token nếu cần
-                    }
-                });
+                socket = io('http://localhost:3000');
 
                 socket.on('connect', () => {
                     console.log('Connected to server');
-                    socket.emit('joinConversation', conversationId);
-                    document.getElementById('messages').innerHTML += `<div class="message">Joined conversation: ${conversationId}</div>`;
+                    // Lấy danh sách conversations
+                    socket.emit('getConversations', currentUserId);
+                });
+
+                socket.on('conversations', (conversations) => {
+                    console.log('Received conversations:', conversations);
+                    const conversationsDiv = document.getElementById('conversations');
+                    conversationsDiv.innerHTML = '';
+
+                    conversations.forEach(conv => {
+                        const div = document.createElement('div');
+                        div.className = 'conversation';
+                        div.textContent = `Conversation: ${conv._id} - Last message: ${conv.lastMessage?.text || 'No messages'}`;
+                        div.onclick = () => {
+                            document.getElementById('conversationId').value = conv._id;
+                            currentConversationId = conv._id;
+                            joinRoom();
+                        };
+                        conversationsDiv.appendChild(div);
+                    });
                 });
 
                 socket.on('newMessage', (message) => {
@@ -90,18 +138,72 @@
                     `;
                 });
 
+                socket.on('conversationUpdated', (conversation) => {
+                    console.log('Conversation updated:', conversation);
+
+                    // Cập nhật UI nếu conversation đang được xem
+                    if (currentConversationId === conversation._id) {
+                        const messagesDiv = document.getElementById('messages');
+                        messagesDiv.innerHTML += `
+                            <div class="message system-message">
+                                Conversation updated
+                            </div>
+                        `;
+                    }
+
+                    // Cập nhật lại danh sách conversations
+                    socket.emit('getConversations', currentUserId);
+                });
+
                 socket.on('error', (error) => {
                     console.error('Socket error:', error);
+                    alert(error.message);
                 });
 
                 socket.on('disconnect', () => {
                     console.log('Disconnected from server');
                 });
+
+                // Nhận tin nhắn mới
+                socket.on('receiveMessage', (data) => {
+                    console.log('Received message:', data);
+                    const { message, conversation } = data;
+
+                    // Hiển thị tin nhắn
+                    const isYourMessage = message.senderId === currentUserId;
+                    const messageClass = isYourMessage ? 'your-message' : 'other-message';
+                    const senderText = isYourMessage ? '(You)' : `(${message.senderId})`;
+
+                    document.getElementById('messages').innerHTML += `
+                        <div class="message ${messageClass}">
+                            ${senderText}: ${message.text}
+                        </div>
+                    `;
+
+                    // Cập nhật danh sách conversations
+                    socket.emit('getConversations', currentUserId);
+                });
+            }
+
+            function joinRoom() {
+                const conversationId = document.getElementById('conversationId').value;
+                if (!conversationId) {
+                    alert('Please enter a conversation ID');
+                    return;
+                }
+
+                socket.emit('joinConversation', conversationId);
+                document.getElementById('messages').innerHTML += `<div class="message">Joined conversation: ${conversationId}</div>`;
             }
 
             function sendMessage() {
                 const message = document.getElementById('messageInput').value;
                 const conversationId = document.getElementById('conversationId').value;
+
+                if (!message || !conversationId) {
+                    alert('Please enter a message and select a conversation');
+                    return;
+                }
 
                 const messageData = {
                     conversationId: conversationId,

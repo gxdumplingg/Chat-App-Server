@@ -72,32 +72,58 @@ io.on('connection', (socket) => {
     // Send message
     socket.on('sendMessage', async (data) => {
         try {
-            const { conversationId, senderId, text, messageType = 'text', attachments = [] } = data;
+            const { conversationId, senderId, text, messageType = 'text' } = data;
 
             // Lưu message vào database
             const Message = require('./models/Message');
             const message = new Message({
-                conversationId,
-                senderId,
+                conversationId: conversationId,
+                senderId: senderId,
                 text,
-                messageType,
-                attachments,
-                status: new Map()
+                messageType
             });
             await message.save();
 
             // Cập nhật lastMessage của conversation
             const Conversation = require('./models/Conversation');
-            await Conversation.findByIdAndUpdate(conversationId, {
+            const conversation = await Conversation.findByIdAndUpdate(conversationId, {
                 lastMessage: message._id,
                 updatedAt: new Date()
-            });
+            }, { new: true })
+                .populate('participants', 'username avatar status lastSeen')
+                .populate('lastMessage');
 
             // Gửi message đến tất cả users trong conversation
-            io.to(conversationId).emit('newMessage', message);
+            io.to(conversationId).emit('receiveMessage', {
+                message: message,
+                conversation: conversation
+            });
+
+            // Gửi cập nhật conversation đến tất cả participants
+            conversation.participants.forEach(participant => {
+                io.to(participant._id.toString()).emit('conversationUpdated', conversation);
+            });
         } catch (error) {
             console.error('Error sending message:', error);
             socket.emit('error', { message: 'Error sending message' });
+        }
+    });
+
+    // Get conversations
+    socket.on('getConversations', async (userId) => {
+        try {
+            const Conversation = require('./models/Conversation');
+            const conversations = await Conversation.find({
+                participants: userId
+            })
+                .populate('participants', 'username avatar status lastSeen')
+                .populate('lastMessage')
+                .sort({ updatedAt: -1 });
+
+            socket.emit('conversations', conversations);
+        } catch (error) {
+            console.error('Error getting conversations:', error);
+            socket.emit('error', { message: 'Error getting conversations' });
         }
     });
 
