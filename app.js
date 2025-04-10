@@ -46,9 +46,9 @@ app.use('/auth', authRoute);
 
 const userRoute = require('./routes/userRoute');
 app.use('/users', userRoute);
-
-const messageRoute = require('./routes/messageRoute');
+const messageRoute = require('./routes/messageRoute')(io);
 app.use('/message', messageRoute);
+
 
 const conversationRoute = require('./routes/conversationRoute');
 app.use('/conversations', conversationRoute);
