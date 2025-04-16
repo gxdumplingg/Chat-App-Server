@@ -1,6 +1,4 @@
 const Conversation = require('../models/Conversation');
-const Message = require('../models/Message');
-const User = require('../models/User');
 
 // Lấy danh sách cuộc trò chuyện của người dùng
 exports.getConversations = async (req, res) => {
