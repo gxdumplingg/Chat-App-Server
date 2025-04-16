@@ -87,5 +87,32 @@ module.exports = (io) => {
         }
     });
 
+    // Đánh dấu tin nhắn đã đọc
+    router.put('/:id/read', async (req, res) => {
+        try {
+            const { userId } = req.body;
+            const message = await Message.findById(req.params.id);
+
+            if (!message) {
+                return res.status(404).json({ message: 'Message not found' });
+            }
+
+            // Cập nhật trạng thái đã đọc
+            message.status.set(userId, 'read');
+            await message.save();
+
+            // Gửi thông báo cập nhật trạng thái
+            io.to(message.conversationId.toString()).emit('messageStatusUpdated', {
+                messageId: message._id,
+                userId: userId,
+                status: 'read'
+            });
+
+            res.json({ message: 'Message marked as read' });
+        } catch (error) {
+            res.status(500).json({ message: error.message });
+        }
+    });
+
     return router;
 };

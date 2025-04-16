@@ -4,7 +4,11 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-require('dotenv').config();
+const dotenv = require('dotenv');
+const jwt = require('jsonwebtoken');
+
+// Load env variables
+dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
@@ -27,7 +31,7 @@ app.use((req, res, next) => {
 });
 
 // Kết nối MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/chat-app', {
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/chat-app', {
     useNewUrlParser: true,
     useUnifiedTopology: true,
     serverSelectionTimeoutMS: 30000,
@@ -41,21 +45,42 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/chat-app'
 });
 
 // Routes
-const authRoute = require('./routes/authRoute');
-app.use('/auth', authRoute);
-
+const { router: authRoute, auth } = require('./routes/authRoute');
 const userRoute = require('./routes/userRoute');
-app.use('/users', userRoute);
 const messageRoute = require('./routes/messageRoute')(io);
-app.use('/message', messageRoute);
+const conversationRoute = require('./routes/conversationRoute')(io);
 
+// Routes
+app.use('/auth', authRoute);
+app.use('/users', userRoute);
+app.use('/message', auth, messageRoute);
+app.use('/conversations', auth, conversationRoute);
 
-const conversationRoute = require('./routes/conversationRoute');
-app.use('/conversations', conversationRoute);
+// Socket.IO authentication middleware
+io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+        return next(new Error('Authentication error'));
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        socket.userId = decoded.userId;
+        next();
+    } catch (error) {
+        return next(new Error('Authentication error'));
+    }
+});
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
+
+    // Update user status to online
+    User.findByIdAndUpdate(socket.userId, {
+        status: 'online',
+        lastSeen: new Date()
+    }).exec();
 
     // Join conversation room
     socket.on('joinConversation', (conversationId) => {
@@ -169,6 +194,11 @@ io.on('connection', (socket) => {
     // Disconnect
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
+        // Update user status to offline
+        User.findByIdAndUpdate(socket.userId, {
+            status: 'offline',
+            lastSeen: new Date()
+        }).exec();
     });
 });
 
