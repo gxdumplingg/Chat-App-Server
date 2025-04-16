@@ -1,4 +1,218 @@
-# Chat App Backend Server
+# Chat App Server
+
+A real-time chat application server built with Node.js, Express, MongoDB, and Socket.IO.
+
+## Features
+
+- Real-time messaging using Socket.IO
+- JWT authentication
+- Group and private conversations
+- Message status (read/unread)
+- User online/offline status
+- File attachments support
+
+## API Documentation
+
+### Authentication
+
+#### Register
+```bash
+POST /auth/register
+Content-Type: application/json
+
+{
+    "username": "string",
+    "email": "string",
+    "password": "string"
+}
+```
+
+#### Login
+```bash
+POST /auth/login
+Content-Type: application/json
+
+{
+    "email": "string",
+    "password": "string"
+}
+```
+
+### Conversations
+
+#### Create Conversation
+```bash
+POST /conversations
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+    "participants": ["user_id_1", "user_id_2"],
+    "name": "string",
+    "type": "group|private"
+}
+```
+
+#### Get User Conversations
+```bash
+GET /conversations/:userId
+Authorization: Bearer <token>
+```
+
+#### Update Conversation
+```bash
+PUT /conversations/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+    "name": "string",
+    "participants": ["user_id_1", "user_id_2"]
+}
+```
+
+#### Delete Conversation
+```bash
+DELETE /conversations/:id
+Authorization: Bearer <token>
+```
+
+#### Leave Conversation
+```bash
+POST /conversations/:id/leave
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+    "userId": "string"
+}
+```
+
+### Messages
+
+#### Send Message
+```bash
+POST /message
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+    "conversationId": "string",
+    "senderId": "string",
+    "text": "string",
+    "messageType": "text|file"
+}
+```
+
+#### Get Conversation Messages
+```bash
+GET /message/:conversationId
+Authorization: Bearer <token>
+```
+
+#### Mark Message as Read
+```bash
+PUT /message/:id/read
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+    "userId": "string"
+}
+```
+
+#### Get Unread Messages
+```bash
+GET /message/unread/:userId
+Authorization: Bearer <token>
+```
+
+## Socket.IO Events
+
+### Connection
+```javascript
+socket.on('connect', () => {
+    console.log('Connected to server');
+});
+```
+
+### Authentication
+```javascript
+socket.on('authenticated', (user) => {
+    console.log('Authenticated:', user);
+});
+```
+
+### Messages
+```javascript
+// Send message
+socket.emit('sendMessage', {
+    conversationId: 'string',
+    senderId: 'string',
+    text: 'string',
+    messageType: 'text'
+});
+
+// Receive message
+socket.on('receiveMessage', (data) => {
+    console.log('New message:', data);
+});
+
+// Message status updated
+socket.on('messageStatusUpdated', (data) => {
+    console.log('Message status updated:', data);
+});
+```
+
+### Conversations
+```javascript
+// Join conversation
+socket.emit('joinConversation', 'conversation_id');
+
+// Leave conversation
+socket.emit('leaveConversation', 'conversation_id');
+
+// Conversation updated
+socket.on('conversationUpdated', (conversation) => {
+    console.log('Conversation updated:', conversation);
+});
+
+// Conversation deleted
+socket.on('conversationDeleted', (conversationId) => {
+    console.log('Conversation deleted:', conversationId);
+});
+```
+
+## Environment Variables
+
+Create a `.env` file in the root directory:
+
+```bash
+PORT=3000
+MONGODB_URI=mongodb://localhost:27017/chat-app
+JWT_SECRET=your_jwt_secret_key_here
+```
+
+## Installation
+
+1. Clone the repository
+2. Install dependencies:
+```bash
+npm install
+```
+3. Start the server:
+```bash
+npm start
+```
+
+## Testing
+
+Use the provided `test.html` file to test the real-time functionality:
+
+1. Open `test.html` in a browser
+2. Enter a user ID and connect
+3. Join a conversation
+4. Send and receive messages in real-time
 
 ## Setup Instructions
 
@@ -41,88 +255,6 @@ node seed.js
 nodemon app
 
 ```
-
-## API Documentation
-
-### Authentication
-
-#### Login
-- **URL**: `/auth/login`
-- **Method**: `POST`
-- **Headers**: 
-  - `Content-Type: application/json`
-- **Body**:
-```json
-{
-    "email": "user@example.com",
-    "password": "password123"
-}
-```
-- **Response**:
-```json
-{
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "user": {
-        "email": "user@example.com",
-        "name": "User Name"
-    }
-}
-```
-
-#### How to Use JWT Token
-1. After successful login, you will receive a JWT token in the response
-2. Store this token securely (e.g., in localStorage or sessionStorage)
-3. For all subsequent API requests (except login), add the token to the request header:
-   ```
-   Authorization: Bearer <your-token>
-   ```
-4. The token will expire after 24 hours. You need to login again to get a new token
-
-### Conversations
-
-#### Get Conversations
-- **URL**: `/conversations`
-- **Method**: `GET`
-- **Headers**: 
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-
-#### Create Conversation
-- **URL**: `/conversations`
-- **Method**: `POST`
-- **Headers**: 
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Body**:
-```json
-{
-    "participants": ["user1@example.com", "user2@example.com"],
-    "type": "private"
-}
-```
-
-### Messages
-
-#### Send Message
-- **URL**: `/message`
-- **Method**: `POST`
-- **Headers**: 
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
-- **Body**:
-```json
-{
-    "conversationId": "conversation_id",
-    "text": "Hello, how are you?"
-}
-```
-
-#### Get Messages
-- **URL**: `/message/:conversationId`
-- **Method**: `GET`
-- **Headers**: 
-  - `Authorization: Bearer <token>`
-  - `Content-Type: application/json`
 
 ## Important Notes
 1. Make sure MongoDB is running before starting the server
