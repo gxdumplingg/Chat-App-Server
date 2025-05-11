@@ -7,16 +7,16 @@ const conversationSchema = new Schema({
         ref: 'User',
         required: true
     }],
+
     type: {
         type: String,
         enum: ['private', 'group'],
         default: 'private'
     },
-    groupName: {
-        type: String
-    },
-    groupAvatar: {
-        type: String
+    createdBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
     },
     lastMessage: {
         type: Schema.Types.ObjectId,
@@ -26,15 +26,13 @@ const conversationSchema = new Schema({
         type: Map,
         of: Number,
         default: {}
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    updatedAt: {
-        type: Date,
-        default: Date.now
     }
+}, {
+    timestamps: true
 });
+
+// Index để tìm kiếm nhanh
+conversationSchema.index({ participants: 1 });
+conversationSchema.index({ type: 1, participants: 1 });
 
 module.exports = mongoose.model('Conversation', conversationSchema); 

@@ -1,6 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const authMiddleware = require('../middlewares/authMiddleware');
+const authMiddleware = require('../middlewares/auth');
 
 const Message = require("../models/Message");
 const User = require("../models/User");

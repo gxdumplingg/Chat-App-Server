@@ -24,12 +24,16 @@ exports.getConversations = async (req, res) => {
 // Tạo cuộc trò chuyện mới
 exports.createConversation = async (req, res) => {
     try {
-        const { participants, type = 'private' } = req.body;
+        console.log('Creating conversation...');
+        console.log('Request body:', req.body);
+        console.log('User:', req.user);
+
+        const { participants, type = 'group' } = req.body;
         const userId = req.user._id;
-        console.log('Creating conversation with:', { participants, type, userId });
 
         // Kiểm tra participants
         if (!participants || !Array.isArray(participants) || participants.length === 0) {
+            console.log('Invalid participants');
             return res.status(400).json({ message: 'Participants are required' });
         }
 
@@ -57,13 +61,19 @@ exports.createConversation = async (req, res) => {
             createdBy: userId
         });
 
+        console.log('Saving conversation...');
         await conversation.save();
         console.log('Created conversation:', conversation);
 
-        res.status(201).json(conversation);
+        // Populate thông tin người tham gia
+        const populatedConversation = await Conversation.findById(conversation._id)
+            .populate('participants', 'username avatar status lastSeen email');
+
+        console.log('Sending response...');
+        return res.status(201).json(populatedConversation);
     } catch (error) {
         console.error('Error creating conversation:', error);
-        res.status(500).json({ message: error.message });
+        throw error;
     }
 };
 
