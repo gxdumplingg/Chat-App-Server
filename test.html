@@ -8,215 +8,684 @@
         <style>
             body {
                 font-family: Arial, sans-serif;
-                margin: 0;
-                padding: 20px;
+                margin: 20px;
             }
 
-            #messages {
-                height: 300px;
-                overflow-y: auto;
+            .container {
+                display: flex;
+                gap: 20px;
+            }
+
+            .chat-container {
+                flex: 1;
                 border: 1px solid #ccc;
                 padding: 10px;
+                height: 500px;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .messages {
+                flex: 1;
+                overflow-y: auto;
                 margin-bottom: 10px;
             }
 
             .message {
-                margin-bottom: 5px;
-                padding: 5px;
+                margin: 5px;
+                padding: 10px;
                 border-radius: 5px;
+                max-width: 70%;
             }
 
             .your-message {
-                background-color: #e3f2fd;
-                text-align: right;
+                background-color: #DCF8C6;
+                margin-left: auto;
             }
 
             .other-message {
-                background-color: #f5f5f5;
+                background-color: #E8E8E8;
             }
 
-            .system-message {
-                background-color: #ffebee;
-                text-align: center;
-                font-style: italic;
+            .input-container {
+                display: flex;
+                gap: 10px;
             }
 
-            input,
+            input {
+                flex: 1;
+                padding: 5px;
+            }
+
             button {
-                padding: 10px;
-                margin-right: 5px;
+                padding: 5px 10px;
             }
 
-            #conversations {
-                margin-bottom: 20px;
-                padding: 10px;
+            .status {
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                margin-left: 5px;
+            }
+
+            .online {
+                background-color: #4CAF50;
+            }
+
+            .offline {
+                background-color: #9E9E9E;
+            }
+
+            .user-list {
+                width: 250px;
                 border: 1px solid #ccc;
+                padding: 10px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
             }
 
-            .conversation {
+            .users-section,
+            .friend-requests-section {
+                border: 1px solid #eee;
                 padding: 10px;
-                border-bottom: 1px solid #eee;
+                border-radius: 5px;
+            }
+
+            .user-item {
+                padding: 10px;
+                margin-bottom: 5px;
+                border: 1px solid #eee;
+                border-radius: 5px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
                 cursor: pointer;
             }
 
-            .conversation:hover {
+            .user-item:hover {
                 background-color: #f5f5f5;
             }
 
-            .conversation.active {
+            .user-info {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }
+
+            .user-actions {
+                display: flex;
+                gap: 5px;
+            }
+
+            .chat-btn {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 3px;
+                cursor: pointer;
+            }
+
+            .chat-btn:hover {
+                background-color: #45a049;
+            }
+
+            .selected-user {
                 background-color: #e3f2fd;
+            }
+
+            .friend-request {
+                padding: 10px;
+                margin-bottom: 10px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .friend-request button {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 3px;
+                cursor: pointer;
+            }
+
+            .friend-request button:hover {
+                background-color: #45a049;
+            }
+
+            .add-friend-btn {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 3px;
+                cursor: pointer;
+            }
+
+            .add-friend-btn:hover {
+                background-color: #0b7dda;
+            }
+
+            .message-input {
+                display: flex;
+                gap: 10px;
+                margin-top: 10px;
+            }
+
+            .message-input input {
+                flex: 1;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }
+
+            .message-input button {
+                padding: 8px 15px;
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+
+            .message-input button:hover {
+                background-color: #45a049;
+            }
+
+            .auth-container {
+                max-width: 400px;
+                margin: 50px auto;
+                padding: 20px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+            }
+
+            .auth-form {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .auth-form input {
+                padding: 8px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+            }
+
+            .auth-form button {
+                padding: 8px;
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+
+            .auth-tabs {
+                display: flex;
+                margin-bottom: 20px;
+            }
+
+            .auth-tab {
+                flex: 1;
+                padding: 10px;
+                text-align: center;
+                cursor: pointer;
+                border-bottom: 2px solid transparent;
+            }
+
+            .auth-tab.active {
+                border-bottom: 2px solid #4CAF50;
+            }
+
+            .auth-form-container {
+                display: none;
+            }
+
+            .auth-form-container.active {
+                display: block;
+            }
+
+            .chat-app {
+                display: none;
             }
         </style>
     </head>
 
     <body>
-        <h1>Chat Test</h1>
-        <div>
-            <input type="text" id="userId" placeholder="User ID">
-            <button onclick="connect()">Connect</button>
+        <div id="authSection" class="auth-container">
+            <div class="auth-tabs">
+                <div class="auth-tab active" onclick="showForm('login')">Login</div>
+                <div class="auth-tab" onclick="showForm('register')">Register</div>
+            </div>
+
+            <div id="loginForm" class="auth-form-container active">
+                <h2>Login</h2>
+                <form class="auth-form" onsubmit="login(event)">
+                    <input type="text" id="loginUsername" placeholder="Username" required>
+                    <input type="password" id="loginPassword" placeholder="Password" required>
+                    <button type="submit">Login</button>
+                </form>
+            </div>
+
+            <div id="registerForm" class="auth-form-container">
+                <h2>Register</h2>
+                <form class="auth-form" onsubmit="register(event)">
+                    <input type="text" id="registerUsername" placeholder="Username" required>
+                    <input type="email" id="registerEmail" placeholder="Email" required>
+                    <input type="password" id="registerPassword" placeholder="Password" required>
+                    <button type="submit">Register</button>
+                </form>
+            </div>
         </div>
-        <div id="conversations"></div>
-        <div>
-            <input type="text" id="conversationId" placeholder="Conversation ID">
-            <button onclick="joinRoom()">Join Room</button>
-        </div>
-        <div id="messages"></div>
-        <div>
-            <input type="text" id="messageInput" placeholder="Type a message">
-            <button onclick="sendMessage()">Send</button>
+
+        <div id="chatSection" class="chat-app">
+            <h1>Chat App Test</h1>
+            <div class="container">
+                <div class="user-list">
+                    <div class="users-section">
+                        <h3>Users</h3>
+                        <div id="users"></div>
+                    </div>
+                    <div class="friend-requests-section">
+                        <h3>Friend Requests</h3>
+                        <div id="friendRequests"></div>
+                    </div>
+                </div>
+                <div class="chat-container">
+                    <div class="messages" id="messages"></div>
+                    <div class="message-input">
+                        <input type="text" id="messageInput" placeholder="Type a message...">
+                        <button onclick="sendMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <script>
             let socket;
             let currentUserId;
             let currentConversationId;
+            let jwtToken;
 
-            function connect() {
-                currentUserId = document.getElementById('userId').value;
-                if (!currentUserId) {
-                    alert('Please enter User ID');
-                    return;
+            // Show login or register form
+            function showForm(formType) {
+                document.querySelectorAll('.auth-tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                document.querySelectorAll('.auth-form-container').forEach(form => {
+                    form.classList.remove('active');
+                });
+
+                document.querySelector(`.auth-tab:nth-child(${formType === 'login' ? 1 : 2})`).classList.add('active');
+                document.getElementById(`${formType}Form`).classList.add('active');
+            }
+
+            // Register function
+            async function register(event) {
+                event.preventDefault();
+
+                const username = document.getElementById('registerUsername').value;
+                const email = document.getElementById('registerEmail').value;
+                const password = document.getElementById('registerPassword').value;
+
+                try {
+                    const response = await fetch('http://localhost:3000/auth/register', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ username, email, password })
+                    });
+
+                    const data = await response.json();
+                    console.log('Register response:', data);
+
+                    if (response.ok) {
+                        alert('Registration successful! Please login.');
+                        showForm('login');
+                    } else {
+                        alert(data.message || 'Registration failed');
+                    }
+                } catch (error) {
+                    console.error('Register error:', error);
+                    alert('Registration failed');
                 }
+            }
 
-                console.log('Connecting to Socket.IO...');
-                socket = io('http://localhost:3000');
+            // Login function
+            async function login(event) {
+                event.preventDefault();
+
+                const username = document.getElementById('loginUsername').value;
+                const password = document.getElementById('loginPassword').value;
+
+                console.log('Attempting login with:', { username, password: '***' });
+
+                try {
+                    const response = await fetch('http://localhost:3000/auth/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ username, password })
+                    });
+
+                    console.log('Response status:', response.status);
+                    console.log('Response headers:', response.headers);
+
+                    const data = await response.json();
+                    console.log('Login response:', data);
+
+                    if (response.ok) {
+                        jwtToken = data.token;
+                        currentUserId = data.user._id;
+                        connect();
+                        document.getElementById('authSection').style.display = 'none';
+                        document.getElementById('chatSection').style.display = 'block';
+                        loadAllUsers();
+                        loadFriendRequests();
+
+                        // Set up periodic refresh
+                        setInterval(loadAllUsers, 10000); // Refresh every 10 seconds
+                    } else {
+                        alert(data.message || 'Login failed');
+                    }
+                } catch (error) {
+                    console.error('Login error:', error);
+                    console.error('Error details:', {
+                        name: error.name,
+                        message: error.message,
+                        stack: error.stack
+                    });
+                    alert('Login failed: ' + error.message);
+                }
+            }
+
+            // Connect to Socket.IO server
+            function connect() {
+                console.log('Connecting to socket with token:', jwtToken);
+                console.log('Current user ID:', currentUserId);
+
+                socket = io('http://localhost:3000', {
+                    auth: {
+                        token: jwtToken
+                    }
+                });
 
                 socket.on('connect', () => {
                     console.log('Connected to server');
-                    // Lấy danh sách conversations
-                    socket.emit('getConversations', currentUserId);
+                    // Get online friends and all users
+                    socket.emit('getOnlineFriends', currentUserId);
+                    loadAllUsers();
                 });
 
-                socket.on('conversations', (conversations) => {
-                    console.log('Received conversations:', conversations);
-                    const conversationsDiv = document.getElementById('conversations');
-                    conversationsDiv.innerHTML = '';
-
-                    conversations.forEach(conv => {
-                        const div = document.createElement('div');
-                        div.className = 'conversation';
-                        div.textContent = `Conversation: ${conv._id} - Last message: ${conv.lastMessage?.text || 'No messages'}`;
-                        div.onclick = () => {
-                            document.getElementById('conversationId').value = conv._id;
-                            currentConversationId = conv._id;
-                            joinRoom();
-                        };
-                        conversationsDiv.appendChild(div);
-                    });
+                socket.on('userStatusChanged', (data) => {
+                    console.log('User status changed:', data);
+                    updateUserStatus(data.userId, data.status);
+                    // Reload user list when status changes
+                    loadAllUsers();
                 });
 
-                socket.on('newMessage', (message) => {
-                    console.log('New message:', message);
-                    const isYourMessage = message.senderId === currentUserId;
-                    const messageClass = isYourMessage ? 'your-message' : 'other-message';
-                    const senderText = isYourMessage ? '(You)' : `(${message.senderId})`;
+                socket.on('onlineFriends', (friends) => {
+                    console.log('Received online friends:', friends);
+                    updateUserList(friends);
+                });
 
-                    document.getElementById('messages').innerHTML += `
-                        <div class="message ${messageClass}">
-                            ${senderText}: ${message.text}
-                        </div>
-                    `;
+                socket.on('receiveMessage', (data) => {
+                    console.log('Received message:', data);
+                    displayMessage(data.message);
                 });
 
                 socket.on('conversationUpdated', (conversation) => {
                     console.log('Conversation updated:', conversation);
-
-                    // Cập nhật UI nếu conversation đang được xem
-                    if (currentConversationId === conversation._id) {
-                        const messagesDiv = document.getElementById('messages');
-                        messagesDiv.innerHTML += `
-                            <div class="message system-message">
-                                Conversation updated
-                            </div>
-                        `;
+                    if (conversation._id === currentConversationId) {
+                        // Update conversation UI
                     }
-
-                    // Cập nhật lại danh sách conversations
-                    socket.emit('getConversations', currentUserId);
                 });
 
                 socket.on('error', (error) => {
                     console.error('Socket error:', error);
-                    alert(error.message);
                 });
+            }
 
-                socket.on('disconnect', () => {
-                    console.log('Disconnected from server');
-                });
+            // Update user status in UI
+            function updateUserStatus(userId, status) {
+                const userElement = document.querySelector(`[data-user-id="${userId}"]`);
+                if (userElement) {
+                    const statusElement = userElement.querySelector('.status');
+                    statusElement.textContent = status;
+                    statusElement.className = `status ${status}`;
+                }
+            }
 
-                // Nhận tin nhắn mới
-                socket.on('receiveMessage', (data) => {
-                    console.log('Received message:', data);
-                    const { message, conversation } = data;
+            // Load all users
+            async function loadAllUsers() {
+                try {
+                    console.log('Loading all users...');
+                    const response = await fetch('http://localhost:3000/users', {
+                        headers: {
+                            'Authorization': `Bearer ${jwtToken}`
+                        }
+                    });
 
-                    // Hiển thị tin nhắn
-                    const isYourMessage = message.senderId === currentUserId;
-                    const messageClass = isYourMessage ? 'your-message' : 'other-message';
-                    const senderText = isYourMessage ? '(You)' : `(${message.senderId})`;
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
 
-                    document.getElementById('messages').innerHTML += `
-                        <div class="message ${messageClass}">
-                            ${senderText}: ${message.text}
+                    const users = await response.json();
+                    console.log('Loaded users:', users);
+                    updateUserList(users);
+                } catch (error) {
+                    console.error('Error loading users:', error);
+                }
+            }
+
+            // Update user list
+            function updateUserList(users) {
+                console.log('Updating user list with:', users);
+                const usersContainer = document.getElementById('users');
+                usersContainer.innerHTML = '';
+
+                if (!users || users.length === 0) {
+                    usersContainer.innerHTML = '<p>No users found</p>';
+                    return;
+                }
+
+                users.forEach(user => {
+                    if (user._id === currentUserId) return; // Skip current user
+
+                    const userElement = document.createElement('div');
+                    userElement.className = 'user-item';
+                    userElement.setAttribute('data-user-id', user._id);
+                    userElement.innerHTML = `
+                        <div class="user-info">
+                            ${user.username}
+                            <span class="status ${user.status || 'offline'}"></span>
+                        </div>
+                        <div class="user-actions">
+                            <button class="chat-btn" onclick="startChat('${user._id}')">Chat</button>
+                            <button class="add-friend-btn" onclick="sendFriendRequest('${user._id}')">Add Friend</button>
                         </div>
                     `;
-
-                    // Cập nhật danh sách conversations
-                    socket.emit('getConversations', currentUserId);
+                    usersContainer.appendChild(userElement);
                 });
             }
 
-            function joinRoom() {
-                const conversationId = document.getElementById('conversationId').value;
-                if (!conversationId) {
-                    alert('Please enter a conversation ID');
-                    return;
-                }
+            // Start chat with user
+            async function startChat(userId) {
+                try {
+                    const response = await fetch('http://localhost:3000/conversations', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${jwtToken}`
+                        },
+                        body: JSON.stringify({
+                            participants: [currentUserId, userId],
+                            type: 'private'
+                        })
+                    });
 
-                socket.emit('joinConversation', conversationId);
-                document.getElementById('messages').innerHTML += `<div class="message">Joined conversation: ${conversationId}</div>`;
+                    const conversation = await response.json();
+                    if (response.ok) {
+                        currentConversationId = conversation._id;
+                        joinConversation(conversation._id);
+
+                        // Clear previous messages
+                        document.getElementById('messages').innerHTML = '';
+
+                        // Update UI to show selected user
+                        document.querySelectorAll('.user-item').forEach(item => {
+                            item.classList.remove('selected-user');
+                        });
+                        document.querySelector(`[data-user-id="${userId}"]`).classList.add('selected-user');
+                    }
+                } catch (error) {
+                    console.error('Error starting chat:', error);
+                    alert('Failed to start chat');
+                }
             }
 
+            // Display message in chat
+            function displayMessage(message) {
+                const messagesContainer = document.getElementById('messages');
+                const messageElement = document.createElement('div');
+                messageElement.className = `message ${message.senderId === currentUserId ? 'your-message' : 'other-message'}`;
+                messageElement.innerHTML = `
+                    <div class="message-content">${message.text}</div>
+                    <div class="message-time">${new Date(message.createdAt).toLocaleTimeString()}</div>
+                `;
+                messagesContainer.appendChild(messageElement);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+
+            // Send message
             function sendMessage() {
-                const message = document.getElementById('messageInput').value;
-                const conversationId = document.getElementById('conversationId').value;
+                const messageInput = document.getElementById('messageInput');
+                const text = messageInput.value.trim();
 
-                if (!message || !conversationId) {
-                    alert('Please enter a message and select a conversation');
-                    return;
+                if (text && currentConversationId) {
+                    socket.emit('sendMessage', {
+                        conversationId: currentConversationId,
+                        senderId: currentUserId,
+                        text: text
+                    });
+
+                    messageInput.value = '';
+                } else {
+                    alert('Please select a conversation first');
+                }
+            }
+
+            // Join conversation
+            function joinConversation(conversationId) {
+                if (currentConversationId) {
+                    socket.emit('leaveConversation', currentConversationId);
                 }
 
-                const messageData = {
-                    conversationId: conversationId,
-                    senderId: currentUserId,
-                    text: message,
-                    messageType: 'text'
-                };
-
-                console.log('Sending message:', messageData);
-                socket.emit('sendMessage', messageData);
-
-                document.getElementById('messageInput').value = '';
+                currentConversationId = conversationId;
+                socket.emit('joinConversation', conversationId);
             }
+
+            // Send friend request
+            async function sendFriendRequest(userId) {
+                try {
+                    const response = await fetch('http://localhost:3000/friends/send', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${jwtToken}`
+                        },
+                        body: JSON.stringify({ receiverId: userId })
+                    });
+
+                    const data = await response.json();
+                    if (response.ok) {
+                        alert('Friend request sent!');
+                    } else {
+                        alert(data.message || 'Failed to send friend request');
+                    }
+                } catch (error) {
+                    console.error('Error sending friend request:', error);
+                    alert('Failed to send friend request');
+                }
+            }
+
+            // Accept friend request
+            async function acceptFriendRequest(friendId) {
+                try {
+                    const response = await fetch(`http://localhost:3000/friends/accept/${friendId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${jwtToken}`
+                        }
+                    });
+
+                    const data = await response.json();
+                    if (response.ok) {
+                        alert('Friend request accepted!');
+                        loadFriendRequests();
+                    } else {
+                        alert(data.message || 'Failed to accept friend request');
+                    }
+                } catch (error) {
+                    console.error('Error accepting friend request:', error);
+                    alert('Failed to accept friend request');
+                }
+            }
+
+            // Load friend requests
+            async function loadFriendRequests() {
+                try {
+                    const response = await fetch('http://localhost:3000/friends/requests', {
+                        headers: {
+                            'Authorization': `Bearer ${jwtToken}`
+                        }
+                    });
+
+                    const requests = await response.json();
+                    const requestsContainer = document.getElementById('friendRequests');
+                    requestsContainer.innerHTML = '';
+
+                    if (!requests || requests.length === 0) {
+                        requestsContainer.innerHTML = '<p>No friend requests</p>';
+                        return;
+                    }
+
+                    requests.forEach(request => {
+                        const requestElement = document.createElement('div');
+                        requestElement.className = 'friend-request';
+                        requestElement.innerHTML = `
+                            <p>${request.user1.username} wants to be your friend</p>
+                            <button onclick="acceptFriendRequest('${request._id}')">Accept</button>
+                        `;
+                        requestsContainer.appendChild(requestElement);
+                    });
+                } catch (error) {
+                    console.error('Error loading friend requests:', error);
+                }
+            }
+
+            // Socket event handlers
+            socket.on('newFriendRequest', (data) => {
+                console.log('New friend request:', data);
+                loadFriendRequests();
+            });
+
+            socket.on('friendRequestAccepted', (data) => {
+                console.log('Friend request accepted:', data);
+                loadFriendRequests();
+                // Refresh friends list
+                socket.emit('getOnlineFriends', currentUserId);
+            });
         </script>
     </body>
 

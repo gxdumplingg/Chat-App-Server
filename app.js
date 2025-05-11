@@ -6,31 +6,57 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { cloudinary, upload } = require('./config/cloudinary');
+const User = require('./models/User');
 
 // Load env variables
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
+
+// CORS configuration
+const corsOptions = {
+    origin: ['http://localhost:5500', 'http://127.0.0.1:5500'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    credentials: true
+};
+
+app.use(cors(corsOptions));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Create temp directory if it doesn't exist
+const tempDir = path.join(__dirname, 'temp');
+if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir);
+}
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, tempDir);
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + '-' + file.originalname);
     }
 });
 
-// Middleware
-app.use(cors());
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+const uploadMiddleware = multer({ storage: storage });
 
 // Logging middleware
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
     next();
 });
 
-// Kết nối MongoDB
+// MongoDB connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/chat-app', {
     useNewUrlParser: true,
     useUnifiedTopology: true,
@@ -44,17 +70,27 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/chat-app'
     process.exit(1);
 });
 
+// Socket.IO setup
+const io = socketIo(server, {
+    cors: corsOptions
+});
+
 // Routes
 const { router: authRoute, auth } = require('./routes/authRoute');
 const userRoute = require('./routes/userRoute');
 const messageRoute = require('./routes/messageRoute')(io);
 const conversationRoute = require('./routes/conversationRoute')(io);
+const mediaRoute = require('./routes/mediaRoute');
 
 // Routes
 app.use('/auth', authRoute);
 app.use('/users', userRoute);
 app.use('/message', auth, messageRoute);
 app.use('/conversations', auth, conversationRoute);
+app.use('/media', auth, mediaRoute);
+
+// Make io accessible to routes
+app.set('io', io);
 
 // Socket.IO authentication middleware
 io.use((socket, next) => {
@@ -72,15 +108,67 @@ io.use((socket, next) => {
     }
 });
 
+// Store online users
+const onlineUsers = new Map();
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
+
+    // Add user to online users
+    onlineUsers.set(socket.userId, socket.id);
 
     // Update user status to online
     User.findByIdAndUpdate(socket.userId, {
         status: 'online',
         lastSeen: new Date()
-    }).exec();
+    }).then(() => {
+        // Notify all friends about the status change
+        io.emit('userStatusChanged', {
+            userId: socket.userId,
+            status: 'online'
+        });
+    });
+
+    // Get online friends
+    socket.on('getOnlineFriends', async (userId) => {
+        try {
+            const user = await User.findById(userId).populate('friends', 'username avatar status lastSeen');
+            if (!user) {
+                console.log('User not found:', userId);
+                return socket.emit('onlineFriends', []);
+            }
+
+            // Ensure friends array exists
+            const friends = user.friends || [];
+            const onlineFriends = friends.filter(friend =>
+                onlineUsers.has(friend._id.toString())
+            );
+            socket.emit('onlineFriends', onlineFriends);
+        } catch (error) {
+            console.error('Error getting online friends:', error);
+            socket.emit('onlineFriends', []);
+        }
+    });
+
+    // Update user status
+    socket.on('updateUserStatus', async (data) => {
+        try {
+            const { status } = data;
+            await User.findByIdAndUpdate(socket.userId, {
+                status,
+                lastSeen: new Date()
+            });
+
+            // Notify all friends about the status change
+            io.emit('userStatusChanged', {
+                userId: socket.userId,
+                status
+            });
+        } catch (error) {
+            console.error('Error updating user status:', error);
+        }
+    });
 
     // Join conversation room
     socket.on('joinConversation', (conversationId) => {
@@ -88,7 +176,7 @@ io.on('connection', (socket) => {
         console.log(`User joined conversation: ${conversationId}`);
     });
 
-    // Leave conversation room
+    // Leave conversation
     socket.on('leaveConversation', (conversationId) => {
         socket.leave(conversationId);
         console.log(`User left conversation: ${conversationId}`);
@@ -183,29 +271,34 @@ io.on('connection', (socket) => {
         });
     });
 
-    // Handle user status
-    socket.on('updateUserStatus', (data) => {
-        socket.broadcast.emit('userStatusChanged', {
-            userId: data.userId,
-            status: data.status
-        });
-    });
-
     // Disconnect
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
+
+        // Remove user from online users
+        onlineUsers.delete(socket.userId);
+
         // Update user status to offline
         User.findByIdAndUpdate(socket.userId, {
             status: 'offline',
             lastSeen: new Date()
-        }).exec();
+        }).then(() => {
+            // Notify all friends about the status change
+            io.emit('userStatusChanged', {
+                userId: socket.userId,
+                status: 'offline'
+            });
+        });
     });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ message: 'Something went wrong!' });
+    console.error('Error:', err);
+    res.status(500).json({
+        message: 'Internal server error',
+        error: err.message
+    });
 });
 
 const PORT = process.env.PORT || 3000;

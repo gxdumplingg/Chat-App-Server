@@ -11,15 +11,35 @@ A real-time chat application server built with Node.js, Express, MongoDB, and So
 - User online/offline status
 - File attachments support
 
+## Cài đặt
+
+1. Clone repository
+2. Cài đặt dependencies:
+```bash
+npm install
+```
+3. Tạo file `.env` với các biến môi trường:
+```
+MONGODB_URI=mongodb://localhost:27017/chat-app
+JWT_SECRET=your_jwt_secret_key
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+PORT=3000
+```
+4. Khởi động server:
+```bash
+npm run dev
+```
+
 ## API Documentation
 
 ### Authentication
 
 #### Register
-```bash
+```
 POST /auth/register
-Content-Type: application/json
-
+Body:
 {
     "username": "string",
     "email": "string",
@@ -28,159 +48,319 @@ Content-Type: application/json
 ```
 
 #### Login
-```bash
+```
 POST /auth/login
-Content-Type: application/json
-
+Body:
 {
     "email": "string",
     "password": "string"
 }
 ```
 
-### Conversations
+### Users
 
-#### Create Conversation
-```bash
-POST /conversations
-Authorization: Bearer <token>
-Content-Type: application/json
+#### Search Users
+```
+GET /users/search?query=keyword
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+```
 
+#### Get User Info
+```
+GET /users/:userId
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+```
+
+#### Get Friends List
+```
+GET /users/friends
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+```
+
+#### Add Friend
+```
+POST /users/friends
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+Body:
 {
-    "participants": ["user_id_1", "user_id_2"],
-    "name": "string",
-    "type": "group|private"
+    "friendId": "user_id_to_add"
 }
 ```
 
-#### Get User Conversations
-```bash
-GET /conversations/:userId
-Authorization: Bearer <token>
+#### Remove Friend
+```
+DELETE /users/friends/:friendId
+Headers:
+- Authorization: Bearer YOUR_TOKEN
 ```
 
-#### Update Conversation
-```bash
-PUT /conversations/:id
-Authorization: Bearer <token>
-Content-Type: application/json
+#### Update Avatar
+```
+PUT /users/avatar
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+Body (form-data):
+- avatar: [file]
+```
 
+#### Update Status
+```
+PUT /users/status
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+Body:
 {
-    "name": "string",
-    "participants": ["user_id_1", "user_id_2"]
-}
-```
-
-#### Delete Conversation
-```bash
-DELETE /conversations/:id
-Authorization: Bearer <token>
-```
-
-#### Leave Conversation
-```bash
-POST /conversations/:id/leave
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-    "userId": "string"
+    "status": "online" | "offline"
 }
 ```
 
 ### Messages
 
 #### Send Message
-```bash
+```
 POST /message
-Authorization: Bearer <token>
-Content-Type: application/json
-
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+Body:
 {
     "conversationId": "string",
-    "senderId": "string",
     "text": "string",
-    "messageType": "text|file"
+    "messageType": "text" | "image" | "file"
 }
 ```
 
-#### Get Conversation Messages
-```bash
+#### Get Messages
+```
 GET /message/:conversationId
-Authorization: Bearer <token>
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+Query:
+- page: number
+- limit: number
 ```
 
-#### Mark Message as Read
-```bash
-PUT /message/:id/read
-Authorization: Bearer <token>
-Content-Type: application/json
-
+#### Update Message Status
+```
+PUT /message/:messageId/status
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+Body:
 {
-    "userId": "string"
+    "status": "sent" | "delivered" | "read"
 }
 ```
 
-#### Get Unread Messages
-```bash
-GET /message/unread/:userId
-Authorization: Bearer <token>
+### Conversations
+
+#### Create Conversation
+```
+POST /conversations
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+Body:
+{
+    "participants": ["user_id1", "user_id2"],
+    "type": "private" | "group",
+    "name": "string" // optional for group
+}
+```
+
+#### Get Conversations
+```
+GET /conversations
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+```
+
+#### Get Conversation Info
+```
+GET /conversations/:conversationId
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+```
+
+#### Update Conversation
+```
+PUT /conversations/:conversationId
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+Body:
+{
+    "name": "string", // for group
+    "avatar": "string" // for group
+}
+```
+
+#### Leave Conversation
+```
+DELETE /conversations/:conversationId/leave
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+```
+
+### Media
+
+#### Upload Media
+```
+POST /media/upload
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+Body (form-data):
+- image: [file]
+```
+
+#### Delete Media
+```
+DELETE /media/:publicId
+Headers:
+- Authorization: Bearer YOUR_TOKEN
+```
+
+#### Get Media Info
+```
+GET /media/info/:publicId
+Headers:
+- Authorization: Bearer YOUR_TOKEN
 ```
 
 ## Socket.IO Events
 
 ### Connection
-```javascript
-socket.on('connect', () => {
-    console.log('Connected to server');
-});
+```
+Headers:
+- token: JWT_TOKEN
 ```
 
-### Authentication
-```javascript
-socket.on('authenticated', (user) => {
-    console.log('Authenticated:', user);
-});
+### Events
+
+#### Join Conversation
+```
+Event: joinConversation
+Data: { conversationId: string }
 ```
 
-### Messages
-```javascript
-// Send message
-socket.emit('sendMessage', {
-    conversationId: 'string',
-    senderId: 'string',
-    text: 'string',
-    messageType: 'text'
-});
-
-// Receive message
-socket.on('receiveMessage', (data) => {
-    console.log('New message:', data);
-});
-
-// Message status updated
-socket.on('messageStatusUpdated', (data) => {
-    console.log('Message status updated:', data);
-});
+#### Leave Conversation
+```
+Event: leaveConversation
+Data: { conversationId: string }
 ```
 
-### Conversations
+#### Send Message
+```
+Event: sendMessage
+Data: {
+    conversationId: string,
+    senderId: string,
+    text: string,
+    messageType: "text" | "image" | "file"
+}
+```
+
+#### Receive Message
+```
+Event: receiveMessage
+Data: {
+    message: Message,
+    conversation: Conversation
+}
+```
+
+#### Update Message Status
+```
+Event: updateMessageStatus
+Data: {
+    messageId: string,
+    userId: string,
+    status: "sent" | "delivered" | "read"
+}
+```
+
+#### User Status Changed
+```
+Event: userStatusChanged
+Data: {
+    userId: string,
+    status: "online" | "offline",
+    lastSeen: Date
+}
+```
+
+#### User Typing
+```
+Event: userTyping
+Data: {
+    userId: string,
+    conversationId: string,
+    isTyping: boolean
+}
+```
+
+#### New Friend
+```
+Event: newFriend
+Data: {
+    friend: {
+        _id: string,
+        username: string,
+        email: string,
+        avatar: string
+    }
+}
+```
+
+#### Friend Removed
+```
+Event: friendRemoved
+Data: {
+    friendId: string
+}
+```
+
+## Models
+
+### User
 ```javascript
-// Join conversation
-socket.emit('joinConversation', 'conversation_id');
+{
+    username: String,
+    email: String,
+    password: String,
+    avatar: {
+        url: String,
+        publicId: String
+    },
+    status: String,
+    lastSeen: Date,
+    friends: [ObjectId]
+}
+```
 
-// Leave conversation
-socket.emit('leaveConversation', 'conversation_id');
+### Message
+```javascript
+{
+    conversationId: ObjectId,
+    senderId: ObjectId,
+    text: String,
+    messageType: String,
+    status: Map,
+    createdAt: Date
+}
+```
 
-// Conversation updated
-socket.on('conversationUpdated', (conversation) => {
-    console.log('Conversation updated:', conversation);
-});
-
-// Conversation deleted
-socket.on('conversationDeleted', (conversationId) => {
-    console.log('Conversation deleted:', conversationId);
-});
+### Conversation
+```javascript
+{
+    participants: [ObjectId],
+    type: String,
+    name: String,
+    avatar: String,
+    lastMessage: ObjectId,
+    createdAt: Date,
+    updatedAt: Date
+}
 ```
 
 ## Environment Variables
@@ -190,7 +370,7 @@ Create a `.env` file in the root directory:
 ```bash
 PORT=3000
 MONGODB_URI=mongodb://localhost:27017/chat-app
-JWT_SECRET=your_jwt_secret_key_here
+JWT_SECRET=your_jwt_secret_key
 ```
 
 ## Installation

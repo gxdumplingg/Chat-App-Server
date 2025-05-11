@@ -5,45 +5,75 @@ require('dotenv').config();
 
 exports.login = async (req, res) => {
     try {
-        console.log('Login attempt with:', req.body);
+        // Log request details
+        console.log('=== Login Request ===');
+        console.log('Headers:', req.headers);
+        console.log('Body:', req.body);
+        console.log('Content-Type:', req.headers['content-type']);
+        console.log('Raw body:', JSON.stringify(req.body));
 
-        // Kiểm tra xem req.body có tồn tại không
-        if (!req.body) {
-            return res.status(400).json({ message: 'Request body is missing' });
+        // Validate request body
+        if (!req.body || Object.keys(req.body).length === 0) {
+            console.log('Empty request body');
+            return res.status(400).json({
+                message: 'Request body is required',
+                received: req.body
+            });
         }
 
-        const { email, password } = req.body;
+        const { username, password } = req.body;
 
-        // Kiểm tra email và password
-        if (!email || !password) {
-            return res.status(400).json({ message: 'Email and password are required' });
+        // Validate required fields
+        if (!username || !password) {
+            console.log('Missing required fields:', { username: !!username, password: !!password });
+            return res.status(400).json({
+                message: 'Username and password are required',
+                received: {
+                    username: !!username,
+                    password: !!password
+                }
+            });
         }
 
-        // Tìm user theo email
-        const user = await User.findOne({ email });
-        console.log('Found user:', user ? 'yes' : 'no');
-
+        // Find user
+        console.log('Searching for user with username:', username);
+        const user = await User.findOne({ username });
         if (!user) {
-            return res.status(401).json({ message: 'Invalid email or password' });
+            console.log('User not found:', username);
+            return res.status(401).json({
+                message: 'Invalid username or password',
+                details: 'User not found'
+            });
         }
 
-        // Kiểm tra mật khẩu đã được mã hóa
+        // Validate password
+        console.log('Validating password for user:', username);
         const isPasswordValid = await bcrypt.compare(password, user.password);
-        console.log('Password valid:', isPasswordValid);
-
         if (!isPasswordValid) {
-            return res.status(401).json({ message: 'Invalid email or password' });
+            console.log('Invalid password for user:', username);
+            return res.status(401).json({
+                message: 'Invalid username or password',
+                details: 'Invalid password'
+            });
         }
 
-        // Tạo token
+        // Generate token
+        console.log('Generating token for user:', username);
         const token = jwt.sign(
             { userId: user._id },
             process.env.JWT_SECRET || 'your-secret-key',
             { expiresIn: '24h' }
         );
 
-        console.log('Login successful for user:', user.email);
+        // Update user status
+        console.log('Updating user status to online:', username);
+        user.status = 'online';
+        user.lastSeen = new Date();
+        await user.save();
 
+        console.log('Login successful for user:', username);
+
+        // Send response
         res.json({
             token,
             user: {
@@ -55,10 +85,12 @@ exports.login = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Login error details:', error);
+        console.error('Login error:', error);
+        console.error('Error stack:', error.stack);
         res.status(500).json({
             message: 'Internal server error',
-            error: error.message
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 };

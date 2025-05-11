@@ -1,13 +1,29 @@
 # Dependencies
 node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
+package-lock.json
+yarn.lock
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Directory for uploaded files
+temp/
+uploads/
 
 # IDE
 .idea/
@@ -25,4 +41,23 @@ logs/
 
 # Build
 dist/
-build/ 
+build/
+coverage/
+
+# Debug
+.debug/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity 
