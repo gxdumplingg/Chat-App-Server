@@ -1,15 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const mediaController = require('../controllers/mediaController');
-const { upload } = require('../config/cloudinary');
+const { uploadSingle, uploadMultiple } = require('../config/cloudinary');
 const auth = require('../middlewares/auth');
 
 
 // Upload single media
-router.post('/upload', auth, upload.single('media'), mediaController.uploadMedia);
+router.post('/upload', auth, uploadSingle, mediaController.uploadMedia);
 
 // Upload multiple media
-router.post('/upload-multiple', auth, upload.array('media', 10), mediaController.uploadMultipleMedia);
+router.post('/upload-multiple', auth, uploadMultiple, mediaController.uploadMultipleMedia);
 
 // Delete media
 router.delete('/:publicId', auth, mediaController.deleteMedia);
