@@ -50,7 +50,7 @@ const optimizeImage = async (inputPath) => {
     }
 };
 
-// Upload media
+// Upload single media
 exports.uploadMedia = async (req, res) => {
     try {
         if (!req.file) {
@@ -88,6 +88,59 @@ exports.uploadMedia = async (req, res) => {
     } catch (error) {
         console.error('Upload error:', error);
         res.status(500).json({ message: 'Error uploading file' });
+    }
+};
+
+// Upload multiple media
+exports.uploadMultipleMedia = async (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ message: 'No files uploaded' });
+        }
+
+        const uploadPromises = req.files.map(async (file) => {
+            try {
+                // Tối ưu ảnh nếu là file ảnh
+                let filePath = file.path;
+                if (file.mimetype.startsWith('image/')) {
+                    filePath = await optimizeImage(file.path);
+                }
+
+                // Upload lên Cloudinary
+                const result = await cloudinary.uploader.upload(filePath, {
+                    resource_type: 'auto',
+                    folder: 'chat-app'
+                });
+
+                // Đợi một chút trước khi xóa file
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                try {
+                    // Xóa file tạm
+                    await fs.unlink(filePath);
+                } catch (unlinkError) {
+                    console.error('Error deleting temp file:', unlinkError);
+                }
+
+                return {
+                    url: result.secure_url,
+                    publicId: result.public_id,
+                    type: result.resource_type
+                };
+            } catch (error) {
+                console.error('Error uploading file:', error);
+                return {
+                    error: true,
+                    message: `Error uploading ${file.originalname}`
+                };
+            }
+        });
+
+        const results = await Promise.all(uploadPromises);
+        res.json(results);
+    } catch (error) {
+        console.error('Multiple upload error:', error);
+        res.status(500).json({ message: 'Error uploading files' });
     }
 };
 
