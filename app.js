@@ -11,6 +11,7 @@ const path = require('path');
 const fs = require('fs');
 const { cloudinary, upload } = require('./config/cloudinary');
 const User = require('./models/User');
+const { swaggerUi, swaggerSpec } = require('./docs/swagger');
 
 // Load env variables
 dotenv.config();
@@ -88,13 +89,14 @@ app.use('/users', userRoute);
 app.use('/message', auth, messageRoute);
 app.use('/conversations', auth, conversationRoute);
 app.use('/media', auth, mediaRoute);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Make io accessible to routes
 app.set('io', io);
 
 // Socket.IO authentication middleware
 io.use((socket, next) => {
-    const token = socket.handshake.auth.token;
+    const { token } = socket.handshake.auth;
     if (!token) {
         return next(new Error('Authentication error'));
     }
@@ -253,9 +255,9 @@ io.on('connection', (socket) => {
 
                 // Gửi cập nhật status đến tất cả users trong conversation
                 io.to(message.conversationId.toString()).emit('messageStatusUpdated', {
-                    messageId,
-                    userId,
-                    status
+                    messageId: message._id,
+                    userId: userId,
+                    status: status
                 });
             }
         } catch (error) {
@@ -303,5 +305,6 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server is running on ${PORT}`);
+    console.log(`API docs available at http://localhost:${PORT}/api-docs`);
 });

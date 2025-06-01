@@ -5,50 +5,64 @@ const cloudinary = require('cloudinary').v2;
 // Send message
 exports.sendMessage = async (req, res) => {
     try {
-        const { conversationId, text, media, emoji } = req.body;
+        const { conversationId, text, messageType = "text" } = req.body;
         const senderId = req.user._id;
 
-        // Validate conversation exists and user is a participant
-        const conversation = await Conversation.findById(conversationId);
-        if (!conversation || !conversation.participants.includes(senderId)) {
-            return res.status(403).json({ message: 'Not authorized to send message in this conversation' });
-        }
-
-        // Create message object
-        const messageData = {
+        console.log('Creating new message with data:', {
             conversationId,
             senderId,
-            text: text || '',
-            emoji: emoji || null
-        };
-
-        // Add media if provided
-        if (media) {
-            messageData.media = {
-                url: media.url,
-                publicId: media.publicId,
-                type: media.type
-            };
-        }
-
-        const message = new Message(messageData);
-        await message.save();
-
-        // Populate sender info
-        await message.populate('senderId', 'username avatar');
-
-        // Emit socket event
-        req.app.get('io').to(conversationId).emit('receiveMessage', {
-            message: {
-                ...message.toObject(),
-                sender: message.senderId
-            }
+            text,
+            messageType
         });
 
-        res.status(201).json(message);
+        if (!conversationId || !text) {
+            return res.status(400).json({ message: "Conversation ID and text are required" });
+        }
+
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+            return res.status(404).json({ message: "Conversation not found" });
+        }
+
+        console.log('Found conversation:', conversation);
+
+        const message = new Message({
+            conversationId,
+            senderId,
+            text,
+            messageType
+        });
+
+        console.log('Saving message to database...');
+        const savedMessage = await message.save();
+        console.log('Message saved successfully:', savedMessage);
+
+        conversation.lastMessage = savedMessage._id;
+        conversation.updatedAt = new Date();
+        console.log('Updating conversation with new message...');
+        await conversation.save();
+        console.log('Conversation updated successfully');
+
+        // Populate dữ liệu cần thiết để gửi lại
+        const populatedConversation = await Conversation.findById(conversationId)
+            .populate("participants", "username avatar status lastSeen")
+            .populate("lastMessage");
+
+        // Emit đến tất cả client trong phòng
+        req.app.get('io').to(conversationId).emit("receiveMessage", {
+            message: savedMessage,
+            conversation: populatedConversation,
+        });
+
+        // Emit conversation update đến từng participant
+        populatedConversation.participants.forEach(participant => {
+            req.app.get('io').to(participant._id.toString()).emit("conversationUpdated", populatedConversation);
+        });
+
+        res.status(201).json(savedMessage);
     } catch (error) {
-        console.error('Send message error:', error);
-        res.status(500).json({ message: 'Error sending message' });
+        console.error('Error in message creation:', error);
+        res.status(500).json({ message: error.message });
     }
 };
 
@@ -57,34 +71,23 @@ exports.getMessages = async (req, res) => {
     try {
         const { conversationId } = req.params;
         const userId = req.user._id;
-        const { page = 1, limit = 50 } = req.query;
 
-        // Validate conversation exists and user is a participant
         const conversation = await Conversation.findById(conversationId);
-        if (!conversation || !conversation.participants.includes(userId)) {
-            return res.status(403).json({ message: 'Not authorized to view messages in this conversation' });
+        if (!conversation) {
+            return res.status(404).json({ message: "Conversation not found" });
+        }
+
+        if (!conversation.participants.includes(userId)) {
+            return res.status(403).json({ message: "You are not a participant of this conversation" });
         }
 
         const messages = await Message.find({ conversationId })
-            .populate('senderId', 'username avatar')
-            .sort({ createdAt: -1 })
-            .skip((page - 1) * limit)
-            .limit(parseInt(limit));
+            .sort({ createdAt: 1 })
+            .populate("senderId", "username avatar");
 
-        // Get total count for pagination
-        const total = await Message.countDocuments({ conversationId });
-
-        res.json({
-            messages: messages.reverse(),
-            pagination: {
-                total,
-                page: parseInt(page),
-                pages: Math.ceil(total / limit)
-            }
-        });
+        res.json(messages);
     } catch (error) {
-        console.error('Get messages error:', error);
-        res.status(500).json({ message: 'Error getting messages' });
+        res.status(500).json({ message: error.message });
     }
 };
 
@@ -164,5 +167,32 @@ exports.reactToMessage = async (req, res) => {
     } catch (error) {
         console.error('React to message error:', error);
         res.status(500).json({ message: 'Error reacting to message' });
+    }
+};
+
+// Mark message as read
+exports.markMessageAsRead = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const message = await Message.findById(req.params.id);
+
+        if (!message) {
+            return res.status(404).json({ message: 'Message not found' });
+        }
+
+        // Cập nhật trạng thái đã đọc
+        message.status.set(userId, 'read');
+        await message.save();
+
+        // Gửi thông báo cập nhật trạng thái
+        req.app.get('io').to(message.conversationId.toString()).emit('messageStatusUpdated', {
+            messageId: message._id,
+            userId: userId,
+            status: 'read'
+        });
+
+        res.json({ message: 'Message marked as read' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
     }
 }; 
