@@ -81,7 +81,8 @@ const io = socketIo(server, {
     },
     transports: ['websocket', 'polling'],
     pingTimeout: 60000,
-    pingInterval: 25000
+    pingInterval: 25000,
+    allowEIO3: true
 });
 
 // Routes
@@ -110,6 +111,7 @@ app.set('io', io);
 // Socket.IO authentication middleware
 io.use((socket, next) => {
     try {
+        // Check token in auth object or query parameters
         const token = socket.handshake.auth.token || socket.handshake.query.token;
         if (!token) {
             return next(new Error('Authentication error: No token provided'));
@@ -142,14 +144,18 @@ io.on('connection', (socket) => {
         // Notify all friends about the status change
         io.emit('userStatusChanged', {
             userId: socket.userId,
-            status: 'online'
+            status: 'online',
+            lastSeen: new Date()
         });
     }).catch(error => {
         console.error('Error updating user status:', error);
     });
 
     // Handle authentication success
-    socket.emit('auth', { status: 'success' });
+    socket.emit('auth', {
+        status: 'success',
+        userId: socket.userId
+    });
 
     // Handle join conversation
     socket.on('join', (data) => {
@@ -157,7 +163,11 @@ io.on('connection', (socket) => {
             const { conversationId } = data;
             socket.join(conversationId);
             console.log(`User ${socket.userId} joined conversation: ${conversationId}`);
-            socket.emit('joined', { conversationId, status: 'success' });
+            socket.emit('joined', {
+                conversationId,
+                status: 'success',
+                userId: socket.userId
+            });
         } catch (error) {
             console.error('Error joining conversation:', error);
             socket.emit('error', { message: 'Error joining conversation' });
@@ -167,7 +177,12 @@ io.on('connection', (socket) => {
     // Handle message sending
     socket.on('message', async (data) => {
         try {
-            const { conversationId, content, messageType = 'text' } = data;
+            const {
+                conversationId,
+                content,
+                messageType = 'text',
+                attachments = [] // Array of media URLs
+            } = data;
 
             // Lưu message vào database
             const Message = require('./models/Message');
@@ -175,7 +190,8 @@ io.on('connection', (socket) => {
                 conversationId: conversationId,
                 senderId: socket.userId,
                 text: content,
-                messageType
+                messageType,
+                attachments: attachments
             });
             await message.save();
 
@@ -190,7 +206,15 @@ io.on('connection', (socket) => {
 
             // Send message to all users in conversation
             io.to(conversationId).emit('message', {
-                message: message,
+                message: {
+                    _id: message._id,
+                    conversationId: message.conversationId,
+                    senderId: message.senderId,
+                    text: message.text,
+                    messageType: message.messageType,
+                    attachments: message.attachments,
+                    createdAt: message.createdAt
+                },
                 conversation: conversation
             });
 
@@ -210,10 +234,36 @@ io.on('connection', (socket) => {
             const { conversationId, isTyping } = data;
             socket.to(conversationId).emit('typing', {
                 userId: socket.userId,
-                isTyping: isTyping
+                isTyping: isTyping,
+                conversationId: conversationId
             });
         } catch (error) {
             console.error('Error handling typing status:', error);
+        }
+    });
+
+    // Handle message status update
+    socket.on('updateMessageStatus', async (data) => {
+        try {
+            const { messageId, status } = data;
+            const Message = require('./models/Message');
+            const message = await Message.findById(messageId);
+
+            if (message) {
+                message.status = status;
+                await message.save();
+
+                // Send status update to all users in conversation
+                io.to(message.conversationId.toString()).emit('messageStatusUpdated', {
+                    messageId: message._id,
+                    userId: socket.userId,
+                    status: status,
+                    conversationId: message.conversationId
+                });
+            }
+        } catch (error) {
+            console.error('Error updating message status:', error);
+            socket.emit('error', { message: 'Error updating message status' });
         }
     });
 
@@ -232,7 +282,8 @@ io.on('connection', (socket) => {
             // Notify all friends about the status change
             io.emit('userStatusChanged', {
                 userId: socket.userId,
-                status: 'offline'
+                status: 'offline',
+                lastSeen: new Date()
             });
         }).catch(error => {
             console.error('Error updating user status on disconnect:', error);

@@ -14,15 +14,11 @@ exports.register = async (req, res) => {
             return res.status(400).json({ message: 'Email already exists' });
         }
 
-        // Mã hóa password
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
         // Tạo user mới
         const user = new User({
             username,
             email,
-            password: hashedPassword
+            password
         });
         await user.save();
 
@@ -52,16 +48,21 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
+        console.log('Login attempt for email:', email);
 
         // Tìm user
         const user = await User.findOne({ email });
         if (!user) {
+            console.log('User not found for email:', email);
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 
         // Kiểm tra password
         const isMatch = await bcrypt.compare(password, user.password);
+        console.log('Password match result:', isMatch);
+
         if (!isMatch) {
+            console.log('Password mismatch for user:', email);
             return res.status(400).json({ message: 'Invalid credentials' });
         }
 

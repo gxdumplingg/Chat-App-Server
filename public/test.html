@@ -13,13 +13,16 @@
                 padding: 20px;
                 display: flex;
                 gap: 20px;
+                flex-wrap: wrap;
             }
 
             .chat-container {
                 flex: 1;
+                min-width: 300px;
                 border: 1px solid #ccc;
                 border-radius: 5px;
                 padding: 10px;
+                margin-bottom: 20px;
             }
 
             .chat-box {
@@ -125,14 +128,36 @@
             </div>
         </div>
 
+        <div class="chat-container">
+            <h2>User 3</h2>
+            <div class="status" id="status3">Disconnected</div>
+            <div class="error" id="error3"></div>
+            <button class="reconnect-btn" onclick="reconnectUser(3)">Reconnect</button>
+            <div class="chat-box" id="chat3"></div>
+            <div class="typing" id="typing3"></div>
+            <div class="input-container">
+                <input type="text" id="message3" placeholder="Type a message...">
+                <button onclick="sendMessage(3)">Send</button>
+            </div>
+        </div>
+
         <script>
             // Socket.IO connections
             let socket1 = null;
             let socket2 = null;
+            let socket3 = null;
             const conversationId = '67fff1541617e626a0e005d4';
             const tokens = {
                 1: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2N2ZmMzM3NmUzODYxZTUyNWQ2ZDQ5OTMiLCJpYXQiOjE3NDg4NDAzOTMsImV4cCI6MTc0ODkyNjc5M30.9tl1JhwSpDOsEi1mrk5tNi_bAUoJ5FLjfHunVC0m48A',
-                2: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODIwNjZmMThmZmRiN2UwOGJkNWFjZGIiLCJpYXQiOjE3NDg4NTEzNzksImV4cCI6MTc0ODkzNzc3OX0.5oWbSbFNFUxyHJ-wWLf8U3i6tINdhPhg3RAp9nn8hPk'
+                2: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODIwNjZmMThmZmRiN2UwOGJkNWFjZGIiLCJpYXQiOjE3NDg4NTEzNzksImV4cCI6MTc0ODkzNzc3OX0.5oWbSbFNFUxyHJ-wWLf8U3i6tINdhPhg3RAp9nn8hPk',
+                3: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODIwNWFkZTQ5ZWQ2ZjkxNWNmZDNmNTkiLCJpYXQiOjE3NDg4NTI1ODAsImV4cCI6MTc0ODkzODk4MH0.S8t-LlWD45a7fKVFurZX6kfsh_Ud077vo-vdEWMkcPs'
+            };
+
+            // Typing timeouts
+            const typingTimeouts = {
+                1: null,
+                2: null,
+                3: null
             };
 
             // Connect Socket.IO for User
@@ -191,7 +216,11 @@
 
                 socket.on('typing', (data) => {
                     const typingBox = document.getElementById(`typing${userId}`);
-                    typingBox.textContent = data.isTyping ? `User ${data.userId} is typing...` : '';
+                    if (data.isTyping) {
+                        typingBox.textContent = `User ${data.userId} is typing...`;
+                    } else {
+                        typingBox.textContent = '';
+                    }
                 });
 
                 socket.on('error', (data) => {
@@ -211,11 +240,16 @@
                         socket1.disconnect();
                     }
                     socket1 = connectUser(1);
-                } else {
+                } else if (userId === 2) {
                     if (socket2) {
                         socket2.disconnect();
                     }
                     socket2 = connectUser(2);
+                } else {
+                    if (socket3) {
+                        socket3.disconnect();
+                    }
+                    socket3 = connectUser(3);
                 }
             }
 
@@ -229,9 +263,34 @@
                 chatBox.scrollTop = chatBox.scrollHeight;
             }
 
+            // Handle typing status with debounce
+            function handleTyping(userId) {
+                const socket = userId === 1 ? socket1 : userId === 2 ? socket2 : socket3;
+                if (socket && socket.connected) {
+                    // Clear existing timeout
+                    if (typingTimeouts[userId]) {
+                        clearTimeout(typingTimeouts[userId]);
+                    }
+
+                    // Emit typing status
+                    socket.emit('typing', {
+                        conversationId: conversationId,
+                        isTyping: true
+                    });
+
+                    // Set new timeout to clear typing status
+                    typingTimeouts[userId] = setTimeout(() => {
+                        socket.emit('typing', {
+                            conversationId: conversationId,
+                            isTyping: false
+                        });
+                    }, 1000); // Clear typing status after 1 second of no input
+                }
+            }
+
             // Send message
             function sendMessage(userId) {
-                const socket = userId === 1 ? socket1 : socket2;
+                const socket = userId === 1 ? socket1 : userId === 2 ? socket2 : socket3;
                 const input = document.getElementById(`message${userId}`);
                 const message = input.value.trim();
                 const errorEl = document.getElementById(`error${userId}`);
@@ -243,6 +302,16 @@
 
                 if (message) {
                     try {
+                        // Clear typing status
+                        if (typingTimeouts[userId]) {
+                            clearTimeout(typingTimeouts[userId]);
+                        }
+                        socket.emit('typing', {
+                            conversationId: conversationId,
+                            isTyping: false
+                        });
+
+                        // Send message
                         socket.emit('message', {
                             conversationId: conversationId,
                             content: message,
@@ -257,31 +326,23 @@
                 }
             }
 
-            // Handle typing status
-            function handleTyping(userId) {
-                const socket = userId === 1 ? socket1 : socket2;
-                if (socket && socket.connected) {
-                    socket.emit('typing', {
-                        conversationId: conversationId,
-                        isTyping: true
-                    });
-                }
-            }
-
             // Connect both users when page loads
             window.onload = () => {
                 socket1 = connectUser(1);
                 socket2 = connectUser(2);
+                socket3 = connectUser(3);
             };
 
-            // Add event listeners for typing
+            // Add event listeners for typing with debounce
             document.getElementById('message1').addEventListener('input', () => handleTyping(1));
             document.getElementById('message2').addEventListener('input', () => handleTyping(2));
+            document.getElementById('message3').addEventListener('input', () => handleTyping(3));
 
             // Handle page unload
             window.onbeforeunload = () => {
                 if (socket1) socket1.disconnect();
                 if (socket2) socket2.disconnect();
+                if (socket3) socket3.disconnect();
             };
         </script>
     </body>

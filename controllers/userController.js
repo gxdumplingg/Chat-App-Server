@@ -444,3 +444,45 @@ exports.getFriendRequests = async (req, res) => {
     }
 };
 
+// Get all users
+exports.getAllUsers = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const search = req.query.search || '';
+        const skip = (page - 1) * limit;
+
+        // Tạo query để tìm kiếm
+        const query = {
+            $or: [
+                { username: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } }
+            ],
+            _id: { $ne: req.user._id } // Loại bỏ user hiện tại
+        };
+
+        // Lấy tổng số users
+        const total = await User.countDocuments(query);
+
+        // Lấy danh sách users
+        const users = await User.find(query)
+            .select('-password') // Không lấy password
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        res.json({
+            users,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Get all users error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
