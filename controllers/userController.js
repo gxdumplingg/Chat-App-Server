@@ -150,6 +150,7 @@ exports.getFriends = async (req, res) => {
 exports.addFriend = async (req, res) => {
     try {
         const { friendId } = req.body;
+        const userId = req.user._id;
 
         // Kiểm tra friendId có tồn tại
         const friend = await User.findById(friendId);
@@ -158,14 +159,35 @@ exports.addFriend = async (req, res) => {
         }
 
         // Kiểm tra đã là bạn chưa
-        const user = await User.findById(req.user._id);
+        const user = await User.findById(userId);
         if (user.friends.includes(friendId)) {
             return res.status(400).json({ message: 'Already friends' });
         }
 
-        // Thêm bạn
+        // Kiểm tra đã có friend request chưa
+        const existingFriendRequest = await Friend.findOne({
+            $or: [
+                { sender: userId, receiver: friendId },
+                { sender: friendId, receiver: userId }
+            ]
+        });
+
+        if (existingFriendRequest) {
+            return res.status(400).json({ message: 'Friend request already exists' });
+        }
+
+        // Tạo friend request mới
+        const friendRequest = new Friend({
+            sender: userId,
+            receiver: friendId,
+            status: 'accepted' // Tự động accept friend request
+        });
+
+        await friendRequest.save();
+
+        // Thêm bạn vào danh sách friends của cả hai user
         user.friends.push(friendId);
-        friend.friends.push(req.user._id);
+        friend.friends.push(userId);
 
         await user.save();
         await friend.save();
@@ -174,15 +196,19 @@ exports.addFriend = async (req, res) => {
         const io = req.app.get('io');
         io.to(friendId.toString()).emit('newFriend', {
             friend: {
-                _id: req.user._id,
-                username: req.user.username,
-                email: req.user.email,
-                avatar: req.user.avatar
+                _id: user._id,
+                username: user.username,
+                email: user.email,
+                avatar: user.avatar
             }
         });
 
-        res.json({ message: 'Friend added successfully' });
+        res.json({
+            message: 'Friend added successfully',
+            friendRequest
+        });
     } catch (error) {
+        console.error('Add friend error:', error);
         res.status(500).json({ message: error.message });
     }
 };

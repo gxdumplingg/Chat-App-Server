@@ -50,9 +50,13 @@ exports.sendMessage = async (req, res) => {
             .populate("participants", "username avatar status lastSeen")
             .populate("lastMessage");
 
+        // Populate sender information
+        const populatedMessage = await Message.findById(savedMessage._id)
+            .populate("senderId", "username avatar");
+
         // Socket emit
         req.app.get('io').to(conversationId).emit("receiveMessage", {
-            message: savedMessage,
+            message: populatedMessage,
             conversation: populatedConversation,
         });
 
@@ -62,7 +66,7 @@ exports.sendMessage = async (req, res) => {
                 .emit("conversationUpdated", populatedConversation);
         });
 
-        res.status(201).json(savedMessage);
+        res.status(201).json(populatedMessage);
     } catch (error) {
         console.error('Error in message creation:', error);
         res.status(500).json({ message: error.message });

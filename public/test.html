@@ -1,63 +1,257 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
     <head>
-        <title>Test Socket.IO</title>
-        <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Test Conversation Realtime</title>
+        <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+
+            #conversations {
+                border: 1px solid #ccc;
+                padding: 10px;
+                margin-bottom: 20px;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+
+            #messages {
+                border: 1px solid #ccc;
+                padding: 10px;
+                margin-bottom: 20px;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+
+            .message {
+                margin: 10px 0;
+                padding: 10px;
+                background: #f0f0f0;
+                border-radius: 5px;
+            }
+
+            .conversation {
+                margin: 10px 0;
+                padding: 10px;
+                background: #e0e0e0;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+
+            .conversation:hover {
+                background: #d0d0d0;
+            }
+
+            .active {
+                background: #b0b0b0 !important;
+            }
+        </style>
     </head>
 
     <body>
-        <h2>Conversation Realtime Test</h2>
-        <div id="messages"></div>
+        <h1>Test Conversation Realtime</h1>
+
+        <div>
+            <h2>Token</h2>
+            <input type="text" id="token" placeholder="Enter your JWT token" style="width: 100%; margin-bottom: 10px;">
+            <button onclick="connectSocket()">Connect</button>
+        </div>
+
+        <div>
+            <h2>Conversations</h2>
+            <div id="conversations"></div>
+        </div>
+
+        <div>
+            <h2>Messages</h2>
+            <div id="messages"></div>
+        </div>
+
+        <div>
+            <h2>Send Message</h2>
+            <input type="text" id="messageText" placeholder="Type your message" style="width: 70%;">
+            <button onclick="sendMessage()">Send</button>
+        </div>
 
         <script>
-            // Kết nối tới server
-            const socket = io('http://localhost:3000', {
-                auth: {
-                    token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODNkYjYyOTE0MGVhMDNlOWI5OTEyNDciLCJpYXQiOjE3NDg4NzQ4MzYsImV4cCI6MTc0ODk2MTIzNn0.YGY9J0RXKHjUw529LujNnMij24qPY70QJEfnyAfddLI' // Thay thế bằng token của bạn
+            let socket;
+            let currentConversationId;
+            let token;
+
+            function connectSocket() {
+                token = document.getElementById('token').value;
+                if (!token) {
+                    alert('Please enter your token');
+                    return;
                 }
-            });
 
-            // Lắng nghe các sự kiện
-            socket.on('connect', () => {
-                console.log('Connected to server');
-                addMessage('Connected to server');
-            });
+                // Disconnect existing socket if any
+                if (socket) {
+                    socket.disconnect();
+                }
 
-            socket.on('conversationsUpdated', (conversations) => {
-                console.log('Conversations updated:', conversations);
-                addMessage('Conversations updated: ' + JSON.stringify(conversations));
-            });
+                // Connect to socket.io
+                socket = io('http://localhost:3000', {
+                    auth: {
+                        token: token
+                    }
+                });
 
-            socket.on('newConversation', (conversation) => {
-                console.log('New conversation:', conversation);
-                addMessage('New conversation: ' + JSON.stringify(conversation));
-            });
+                // Socket event listeners
+                socket.on('connect', () => {
+                    console.log('Connected to socket');
+                    getConversations();
+                });
 
-            socket.on('conversationUpdated', (conversation) => {
-                console.log('Conversation updated:', conversation);
-                addMessage('Conversation updated: ' + JSON.stringify(conversation));
-            });
+                socket.on('disconnect', () => {
+                    console.log('Disconnected from socket');
+                });
 
-            socket.on('conversationDeleted', (conversationId) => {
-                console.log('Conversation deleted:', conversationId);
-                addMessage('Conversation deleted: ' + conversationId);
-            });
+                socket.on('conversationsUpdated', (conversations) => {
+                    console.log('Conversations updated:', conversations);
+                    displayConversations(conversations);
+                });
 
-            socket.on('addedToConversation', (conversation) => {
-                console.log('Added to conversation:', conversation);
-                addMessage('Added to conversation: ' + JSON.stringify(conversation));
-            });
+                socket.on('receiveMessage', (data) => {
+                    console.log('New message received:', data);
+                    if (data.conversation._id === currentConversationId) {
+                        // Thêm tin nhắn mới vào danh sách
+                        const container = document.getElementById('messages');
+                        const div = document.createElement('div');
+                        div.className = 'message';
+                        const isCurrentUser = data.message.senderId._id === socket.userId;
+                        div.textContent = `${isCurrentUser ? 'You' : data.message.senderId.username}: ${data.message.text}`;
+                        container.appendChild(div);
+                        // Cuộn xuống tin nhắn mới nhất
+                        container.scrollTop = container.scrollHeight;
+                    }
+                });
 
-            socket.on('removedFromConversation', (conversationId) => {
-                console.log('Removed from conversation:', conversationId);
-                addMessage('Removed from conversation: ' + conversationId);
-            });
+                socket.on('conversationUpdated', (conversation) => {
+                    console.log('Conversation updated:', conversation);
+                    if (conversation._id === currentConversationId) {
+                        // Cập nhật lại danh sách tin nhắn
+                        getMessages(currentConversationId);
+                    }
+                });
+            }
 
-            function addMessage(message) {
-                const div = document.createElement('div');
-                div.textContent = message;
-                document.getElementById('messages').appendChild(div);
+            async function getConversations() {
+                try {
+                    const response = await fetch('http://localhost:3000/conversations', {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    const conversations = await response.json();
+                    displayConversations(conversations);
+                } catch (error) {
+                    console.error('Error getting conversations:', error);
+                }
+            }
+
+            function displayConversations(conversations) {
+                const container = document.getElementById('conversations');
+                container.innerHTML = '';
+
+                conversations.forEach(conv => {
+                    const div = document.createElement('div');
+                    div.className = 'conversation';
+                    div.textContent = `Conversation ${conv._id}`;
+                    div.onclick = () => {
+                        document.querySelectorAll('.conversation').forEach(c => c.classList.remove('active'));
+                        div.classList.add('active');
+                        currentConversationId = conv._id;
+                        // Join conversation room
+                        socket.emit('join', { conversationId: conv._id });
+                        getMessages(conv._id);
+                    };
+                    container.appendChild(div);
+                });
+            }
+
+            async function getMessages(conversationId) {
+                try {
+                    const response = await fetch(`http://localhost:3000/message/${conversationId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    const messages = await response.json();
+                    displayMessages(messages);
+                } catch (error) {
+                    console.error('Error getting messages:', error);
+                }
+            }
+
+            function displayMessages(messages) {
+                const container = document.getElementById('messages');
+                container.innerHTML = '';
+
+                messages.forEach(msg => {
+                    const div = document.createElement('div');
+                    div.className = 'message';
+                    const isCurrentUser = msg.senderId._id === socket.userId;
+                    div.textContent = `${isCurrentUser ? 'You' : msg.senderId.username}: ${msg.text}`;
+                    container.appendChild(div);
+                });
+                // Cuộn xuống tin nhắn mới nhất
+                container.scrollTop = container.scrollHeight;
+            }
+
+            async function sendMessage() {
+                if (!currentConversationId) {
+                    alert('Please select a conversation first');
+                    return;
+                }
+
+                const text = document.getElementById('messageText').value;
+                if (!text) {
+                    alert('Please enter a message');
+                    return;
+                }
+
+                try {
+                    console.log('Sending message:', {
+                        conversationId: currentConversationId,
+                        text: text,
+                        messageType: 'text'
+                    });
+
+                    const response = await fetch('http://localhost:3000/message', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            conversationId: currentConversationId,
+                            text: text,
+                            messageType: 'text'
+                        })
+                    });
+
+                    console.log('Response status:', response.status);
+                    const responseData = await response.json();
+                    console.log('Response data:', responseData);
+
+                    if (response.ok) {
+                        document.getElementById('messageText').value = '';
+                        // Không cần thêm tin nhắn ở đây vì sẽ nhận được từ socket event
+                    } else {
+                        alert(`Error: ${responseData.message || 'Unknown error'}`);
+                    }
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    alert(`Error sending message: ${error.message}`);
+                }
             }
         </script>
     </body>
