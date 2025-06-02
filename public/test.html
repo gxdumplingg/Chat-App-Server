@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Chat Test</title>
+        <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 20px;
+                display: flex;
+                gap: 20px;
+            }
+
+            .chat-container {
+                flex: 1;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                padding: 10px;
+            }
+
+            .chat-box {
+                height: 400px;
+                border: 1px solid #eee;
+                margin-bottom: 10px;
+                padding: 10px;
+                overflow-y: auto;
+            }
+
+            .message {
+                margin: 5px 0;
+                padding: 5px;
+                border-radius: 5px;
+            }
+
+            .message.sent {
+                background-color: #e3f2fd;
+                margin-left: 20%;
+            }
+
+            .message.received {
+                background-color: #f5f5f5;
+                margin-right: 20%;
+            }
+
+            .input-container {
+                display: flex;
+                gap: 10px;
+            }
+
+            input[type="text"] {
+                flex: 1;
+                padding: 5px;
+            }
+
+            button {
+                padding: 5px 15px;
+                background-color: #2196f3;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+            }
+
+            button:hover {
+                background-color: #1976d2;
+            }
+
+            .status {
+                color: #666;
+                font-style: italic;
+                margin: 5px 0;
+            }
+
+            .typing {
+                color: #666;
+                font-style: italic;
+                margin: 5px 0;
+            }
+
+            .error {
+                color: red;
+                font-style: italic;
+                margin: 5px 0;
+            }
+
+            .reconnect-btn {
+                background-color: #4CAF50;
+                margin-top: 5px;
+            }
+
+            .reconnect-btn:hover {
+                background-color: #45a049;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="chat-container">
+            <h2>User 1</h2>
+            <div class="status" id="status1">Disconnected</div>
+            <div class="error" id="error1"></div>
+            <button class="reconnect-btn" onclick="reconnectUser(1)">Reconnect</button>
+            <div class="chat-box" id="chat1"></div>
+            <div class="typing" id="typing1"></div>
+            <div class="input-container">
+                <input type="text" id="message1" placeholder="Type a message...">
+                <button onclick="sendMessage(1)">Send</button>
+            </div>
+        </div>
+
+        <div class="chat-container">
+            <h2>User 2</h2>
+            <div class="status" id="status2">Disconnected</div>
+            <div class="error" id="error2"></div>
+            <button class="reconnect-btn" onclick="reconnectUser(2)">Reconnect</button>
+            <div class="chat-box" id="chat2"></div>
+            <div class="typing" id="typing2"></div>
+            <div class="input-container">
+                <input type="text" id="message2" placeholder="Type a message...">
+                <button onclick="sendMessage(2)">Send</button>
+            </div>
+        </div>
+
+        <script>
+            // Socket.IO connections
+            let socket1 = null;
+            let socket2 = null;
+            const conversationId = '67fff1541617e626a0e005d4';
+            const tokens = {
+                1: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2N2ZmMzM3NmUzODYxZTUyNWQ2ZDQ5OTMiLCJpYXQiOjE3NDg4NDAzOTMsImV4cCI6MTc0ODkyNjc5M30.9tl1JhwSpDOsEi1mrk5tNi_bAUoJ5FLjfHunVC0m48A',
+                2: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2ODIwNjZmMThmZmRiN2UwOGJkNWFjZGIiLCJpYXQiOjE3NDg4NTEzNzksImV4cCI6MTc0ODkzNzc3OX0.5oWbSbFNFUxyHJ-wWLf8U3i6tINdhPhg3RAp9nn8hPk'
+            };
+
+            // Connect Socket.IO for User
+            function connectUser(userId) {
+                const statusEl = document.getElementById(`status${userId}`);
+                const errorEl = document.getElementById(`error${userId}`);
+
+                const socket = io('http://localhost:3000', {
+                    auth: {
+                        token: tokens[userId]
+                    },
+                    transports: ['websocket'],
+                    reconnection: true,
+                    reconnectionAttempts: 5,
+                    reconnectionDelay: 1000
+                });
+
+                socket.on('connect', () => {
+                    statusEl.textContent = 'Connected';
+                    errorEl.textContent = '';
+                    console.log(`User ${userId} connected`);
+                });
+
+                socket.on('connect_error', (error) => {
+                    console.error(`Connection error for User ${userId}:`, error);
+                    errorEl.textContent = 'Connection error: ' + error.message;
+                    statusEl.textContent = 'Disconnected';
+                });
+
+                socket.on('disconnect', (reason) => {
+                    console.log(`User ${userId} disconnected:`, reason);
+                    statusEl.textContent = 'Disconnected';
+                    if (reason === 'io server disconnect') {
+                        errorEl.textContent = 'Server disconnected';
+                    }
+                });
+
+                socket.on('auth', (data) => {
+                    if (data.status === 'success') {
+                        // Join conversation after successful authentication
+                        socket.emit('join', { conversationId });
+                    } else {
+                        errorEl.textContent = 'Authentication failed';
+                    }
+                });
+
+                socket.on('joined', (data) => {
+                    if (data.status === 'success') {
+                        console.log(`User ${userId} joined conversation: ${data.conversationId}`);
+                    }
+                });
+
+                socket.on('message', (data) => {
+                    handleMessage(userId, data);
+                });
+
+                socket.on('typing', (data) => {
+                    const typingBox = document.getElementById(`typing${userId}`);
+                    typingBox.textContent = data.isTyping ? `User ${data.userId} is typing...` : '';
+                });
+
+                socket.on('error', (data) => {
+                    errorEl.textContent = data.message;
+                });
+
+                return socket;
+            }
+
+            // Reconnect user
+            function reconnectUser(userId) {
+                const errorEl = document.getElementById(`error${userId}`);
+                errorEl.textContent = 'Reconnecting...';
+
+                if (userId === 1) {
+                    if (socket1) {
+                        socket1.disconnect();
+                    }
+                    socket1 = connectUser(1);
+                } else {
+                    if (socket2) {
+                        socket2.disconnect();
+                    }
+                    socket2 = connectUser(2);
+                }
+            }
+
+            // Handle incoming messages
+            function handleMessage(userId, data) {
+                const chatBox = document.getElementById(`chat${userId}`);
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${data.message.senderId === userId ? 'sent' : 'received'}`;
+                messageDiv.textContent = `${data.message.senderId}: ${data.message.text}`;
+                chatBox.appendChild(messageDiv);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+
+            // Send message
+            function sendMessage(userId) {
+                const socket = userId === 1 ? socket1 : socket2;
+                const input = document.getElementById(`message${userId}`);
+                const message = input.value.trim();
+                const errorEl = document.getElementById(`error${userId}`);
+
+                if (!socket || !socket.connected) {
+                    errorEl.textContent = 'Not connected. Please reconnect.';
+                    return;
+                }
+
+                if (message) {
+                    try {
+                        socket.emit('message', {
+                            conversationId: conversationId,
+                            content: message,
+                            messageType: 'text'
+                        });
+                        input.value = '';
+                        errorEl.textContent = '';
+                    } catch (error) {
+                        console.error('Error sending message:', error);
+                        errorEl.textContent = 'Error sending message';
+                    }
+                }
+            }
+
+            // Handle typing status
+            function handleTyping(userId) {
+                const socket = userId === 1 ? socket1 : socket2;
+                if (socket && socket.connected) {
+                    socket.emit('typing', {
+                        conversationId: conversationId,
+                        isTyping: true
+                    });
+                }
+            }
+
+            // Connect both users when page loads
+            window.onload = () => {
+                socket1 = connectUser(1);
+                socket2 = connectUser(2);
+            };
+
+            // Add event listeners for typing
+            document.getElementById('message1').addEventListener('input', () => handleTyping(1));
+            document.getElementById('message2').addEventListener('input', () => handleTyping(2));
+
+            // Handle page unload
+            window.onbeforeunload = () => {
+                if (socket1) socket1.disconnect();
+                if (socket2) socket2.disconnect();
+            };
+        </script>
+    </body>
+
+</html>

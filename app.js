@@ -30,6 +30,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static('public')); // Serve static files from public directory
 
 // Create temp directory if it doesn't exist
 const tempDir = path.join(__dirname, 'temp');
@@ -73,7 +74,14 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/chat-app'
 
 // Socket.IO setup
 const io = socketIo(server, {
-    cors: corsOptions
+    cors: {
+        origin: ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500", "http://127.0.0.1:5500"],
+        methods: ["GET", "POST"],
+        credentials: true
+    },
+    transports: ['websocket', 'polling'],
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
 // Routes
@@ -91,22 +99,28 @@ app.use('/conversations', auth, conversationRoute);
 app.use('/media', auth, mediaRoute);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+// Test route for WebSocket
+app.get('/test', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'test.html'));
+});
+
 // Make io accessible to routes
 app.set('io', io);
 
 // Socket.IO authentication middleware
 io.use((socket, next) => {
-    const { token } = socket.handshake.auth;
-    if (!token) {
-        return next(new Error('Authentication error'));
-    }
-
     try {
+        const token = socket.handshake.auth.token || socket.handshake.query.token;
+        if (!token) {
+            return next(new Error('Authentication error: No token provided'));
+        }
+
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         socket.userId = decoded.userId;
         next();
     } catch (error) {
-        return next(new Error('Authentication error'));
+        console.error('Socket authentication error:', error);
+        return next(new Error('Authentication error: Invalid token'));
     }
 });
 
@@ -115,7 +129,7 @@ const onlineUsers = new Map();
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-    console.log('New client connected:', socket.id);
+    console.log('New client connected:', socket.id, 'User ID:', socket.userId);
 
     // Add user to online users
     onlineUsers.set(socket.userId, socket.id);
@@ -130,76 +144,42 @@ io.on('connection', (socket) => {
             userId: socket.userId,
             status: 'online'
         });
+    }).catch(error => {
+        console.error('Error updating user status:', error);
     });
 
-    // Get online friends
-    socket.on('getOnlineFriends', async (userId) => {
-        try {
-            const user = await User.findById(userId).populate('friends', 'username avatar status lastSeen');
-            if (!user) {
-                console.log('User not found:', userId);
-                return socket.emit('onlineFriends', []);
-            }
+    // Handle authentication success
+    socket.emit('auth', { status: 'success' });
 
-            // Ensure friends array exists
-            const friends = user.friends || [];
-            const onlineFriends = friends.filter(friend =>
-                onlineUsers.has(friend._id.toString())
-            );
-            socket.emit('onlineFriends', onlineFriends);
+    // Handle join conversation
+    socket.on('join', (data) => {
+        try {
+            const { conversationId } = data;
+            socket.join(conversationId);
+            console.log(`User ${socket.userId} joined conversation: ${conversationId}`);
+            socket.emit('joined', { conversationId, status: 'success' });
         } catch (error) {
-            console.error('Error getting online friends:', error);
-            socket.emit('onlineFriends', []);
+            console.error('Error joining conversation:', error);
+            socket.emit('error', { message: 'Error joining conversation' });
         }
     });
 
-    // Update user status
-    socket.on('updateUserStatus', async (data) => {
+    // Handle message sending
+    socket.on('message', async (data) => {
         try {
-            const { status } = data;
-            await User.findByIdAndUpdate(socket.userId, {
-                status,
-                lastSeen: new Date()
-            });
-
-            // Notify all friends about the status change
-            io.emit('userStatusChanged', {
-                userId: socket.userId,
-                status
-            });
-        } catch (error) {
-            console.error('Error updating user status:', error);
-        }
-    });
-
-    // Join conversation room
-    socket.on('joinConversation', (conversationId) => {
-        socket.join(conversationId);
-        console.log(`User joined conversation: ${conversationId}`);
-    });
-
-    // Leave conversation
-    socket.on('leaveConversation', (conversationId) => {
-        socket.leave(conversationId);
-        console.log(`User left conversation: ${conversationId}`);
-    });
-
-    // Send message
-    socket.on('sendMessage', async (data) => {
-        try {
-            const { conversationId, senderId, text, messageType = 'text' } = data;
+            const { conversationId, content, messageType = 'text' } = data;
 
             // Lưu message vào database
             const Message = require('./models/Message');
             const message = new Message({
                 conversationId: conversationId,
-                senderId: senderId,
-                text,
+                senderId: socket.userId,
+                text: content,
                 messageType
             });
             await message.save();
 
-            // Cập nhật lastMessage của conversation
+            // Update conversation's last message
             const Conversation = require('./models/Conversation');
             const conversation = await Conversation.findByIdAndUpdate(conversationId, {
                 lastMessage: message._id,
@@ -208,13 +188,13 @@ io.on('connection', (socket) => {
                 .populate('participants', 'username avatar status lastSeen')
                 .populate('lastMessage');
 
-            // Gửi message đến tất cả users trong conversation
-            io.to(conversationId).emit('receiveMessage', {
+            // Send message to all users in conversation
+            io.to(conversationId).emit('message', {
                 message: message,
                 conversation: conversation
             });
 
-            // Gửi cập nhật conversation đến tất cả participants
+            // Send conversation update to all participants
             conversation.participants.forEach(participant => {
                 io.to(participant._id.toString()).emit('conversationUpdated', conversation);
             });
@@ -224,58 +204,22 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Get conversations
-    socket.on('getConversations', async (userId) => {
-        try {
-            const Conversation = require('./models/Conversation');
-            const conversations = await Conversation.find({
-                participants: userId
-            })
-                .populate('participants', 'username avatar status lastSeen')
-                .populate('lastMessage')
-                .sort({ updatedAt: -1 });
-
-            socket.emit('conversations', conversations);
-        } catch (error) {
-            console.error('Error getting conversations:', error);
-            socket.emit('error', { message: 'Error getting conversations' });
-        }
-    });
-
-    // Update message status
-    socket.on('updateMessageStatus', async (data) => {
-        try {
-            const { messageId, userId, status } = data;
-            const Message = require('./models/Message');
-            const message = await Message.findById(messageId);
-
-            if (message) {
-                message.status.set(userId, status);
-                await message.save();
-
-                // Gửi cập nhật status đến tất cả users trong conversation
-                io.to(message.conversationId.toString()).emit('messageStatusUpdated', {
-                    messageId: message._id,
-                    userId: userId,
-                    status: status
-                });
-            }
-        } catch (error) {
-            console.error('Error updating message status:', error);
-        }
-    });
-
     // Handle typing status
     socket.on('typing', (data) => {
-        socket.to(data.conversationId).emit('userTyping', {
-            userId: data.userId,
-            isTyping: data.isTyping
-        });
+        try {
+            const { conversationId, isTyping } = data;
+            socket.to(conversationId).emit('typing', {
+                userId: socket.userId,
+                isTyping: isTyping
+            });
+        } catch (error) {
+            console.error('Error handling typing status:', error);
+        }
     });
 
-    // Disconnect
+    // Handle disconnection
     socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
+        console.log('Client disconnected:', socket.id, 'User ID:', socket.userId);
 
         // Remove user from online users
         onlineUsers.delete(socket.userId);
@@ -290,6 +234,8 @@ io.on('connection', (socket) => {
                 userId: socket.userId,
                 status: 'offline'
             });
+        }).catch(error => {
+            console.error('Error updating user status on disconnect:', error);
         });
     });
 });

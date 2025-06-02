@@ -2,6 +2,14 @@ const cloudinary = require('cloudinary').v2;
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs').promises;
+const {
+    calculateFileHash,
+    processFileInChunks,
+    verifyFileIntegrity,
+    retryWithBackoff,
+    cleanupTempFiles,
+    validateFileMetadata
+} = require('../utils/fileUtils');
 
 // Configure Cloudinary
 cloudinary.config({
@@ -15,19 +23,15 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-msvideo'];
 const ALLOWED_FILE_TYPES = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES];
-
 // Kiểm tra tính hợp lệ của file
 const validateFile = (file) => {
-    if (!file) {
-        throw new Error('Không có file được upload');
-    }
+    const validation = validateFileMetadata(file, {
+        maxSize: MAX_FILE_SIZE,
+        allowedMimeTypes: ALLOWED_FILE_TYPES
+    });
 
-    if (file.size > MAX_FILE_SIZE) {
-        throw new Error(`File quá lớn. Kích thước tối đa là ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
-    }
-
-    if (!ALLOWED_FILE_TYPES.includes(file.mimetype)) {
-        throw new Error('Định dạng file không được hỗ trợ');
+    if (!validation.isValid) {
+        throw new Error(validation.errors.join(', '));
     }
 
     return true;
@@ -109,6 +113,7 @@ const optimizeImage = async (inputPath) => {
 
 // Upload single media
 exports.uploadMedia = async (req, res) => {
+    let tempFiles = [];
     try {
         // Kiểm tra file
         validateFile(req.file);
@@ -117,6 +122,7 @@ exports.uploadMedia = async (req, res) => {
         let thumbnailPath = null;
         let optimizedPath = null;
         let shouldDeleteOriginal = true;
+        tempFiles.push(filePath);
 
         // Xử lý file dựa trên loại
         if (req.file.mimetype.startsWith('image/')) {
@@ -124,48 +130,49 @@ exports.uploadMedia = async (req, res) => {
                 const optimizationResult = await optimizeImage(filePath);
                 filePath = optimizationResult.path;
                 shouldDeleteOriginal = optimizationResult.shouldDelete;
+                if (filePath !== req.file.path) {
+                    tempFiles.push(filePath);
+                }
             } catch (optimizeError) {
                 console.error('Error optimizing image:', optimizeError);
                 // Tiếp tục với file gốc nếu có lỗi
             }
         } else if (req.file.mimetype.startsWith('video/')) {
             thumbnailPath = await generateVideoThumbnail(filePath);
+            if (thumbnailPath) {
+                tempFiles.push(thumbnailPath);
+            }
         }
 
-        // Upload lên Cloudinary
-        const result = await cloudinary.uploader.upload(filePath, {
-            resource_type: 'auto',
-            folder: 'chat-app',
-            eager: [
-                { width: 300, height: 300, crop: 'pad', audio_codec: 'none' },
-                { width: 600, height: 600, crop: 'lfill', audio_codec: 'none' }
-            ],
-            eager_async: true
+        // Calculate file hash before upload
+        const originalHash = await calculateFileHash(filePath);
+
+        // Upload lên Cloudinary với retry mechanism
+        const result = await retryWithBackoff(async () => {
+            return await cloudinary.uploader.upload(filePath, {
+                resource_type: 'auto',
+                folder: 'chat-app',
+                eager: [
+                    { width: 300, height: 300, crop: 'pad', audio_codec: 'none' },
+                    { width: 600, height: 600, crop: 'lfill', audio_codec: 'none' }
+                ],
+                eager_async: true
+            });
         });
 
         // Upload thumbnail nếu có
         let thumbnailUrl = null;
         if (thumbnailPath) {
-            const thumbnailResult = await cloudinary.uploader.upload(thumbnailPath, {
-                folder: 'chat-app/thumbnails'
+            const thumbnailResult = await retryWithBackoff(async () => {
+                return await cloudinary.uploader.upload(thumbnailPath, {
+                    folder: 'chat-app/thumbnails'
+                });
             });
             thumbnailUrl = thumbnailResult.secure_url;
         }
 
         // Cleanup files
-        const filesToDelete = [
-            shouldDeleteOriginal ? req.file.path : null, // File gốc (chỉ xóa nếu cần)
-            filePath !== req.file.path ? filePath : null, // File đã optimize (nếu khác file gốc)
-            thumbnailPath  // Thumbnail (nếu có)
-        ].filter(Boolean); // Lọc bỏ các giá trị null/undefined
-
-        await Promise.all(
-            filesToDelete.map(file =>
-                fs.unlink(file).catch(err =>
-                    console.error(`Error deleting file ${file}:`, err)
-                )
-            )
-        );
+        await cleanupTempFiles(tempFiles);
 
         res.json({
             url: result.secure_url,
@@ -175,26 +182,36 @@ exports.uploadMedia = async (req, res) => {
             width: result.width,
             height: result.height,
             format: result.format,
-            size: result.bytes
+            size: result.bytes,
+            hash: originalHash
         });
     } catch (error) {
+        // Cleanup temp files in case of error
+        await cleanupTempFiles(tempFiles);
+
         console.error('Upload error:', error);
         res.status(error.message.includes('quá lớn') ? 413 : 500)
-            .json({ message: error.message || 'Error uploading file' });
+            .json({
+                message: error.message || 'Error uploading file',
+                error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            });
     }
 };
 
 // Upload multiple media
 exports.uploadMultipleMedia = async (req, res) => {
+    const tempFiles = [];
     try {
         if (!req.files || req.files.length === 0) {
             return res.status(400).json({ message: 'No files uploaded' });
         }
 
         const uploadPromises = req.files.map(async (file) => {
+            const fileTempFiles = [];
             try {
                 // Kiểm tra file
                 validateFile(file);
+                fileTempFiles.push(file.path);
 
                 let filePath = file.path;
                 let thumbnailPath = null;
@@ -207,48 +224,48 @@ exports.uploadMultipleMedia = async (req, res) => {
                         const optimizationResult = await optimizeImage(filePath);
                         filePath = optimizationResult.path;
                         shouldDeleteOriginal = optimizationResult.shouldDelete;
+                        if (filePath !== file.path) {
+                            fileTempFiles.push(filePath);
+                        }
                     } catch (optimizeError) {
                         console.error('Error optimizing image:', optimizeError);
-                        // Tiếp tục với file gốc nếu có lỗi
                     }
                 } else if (file.mimetype.startsWith('video/')) {
                     thumbnailPath = await generateVideoThumbnail(filePath);
+                    if (thumbnailPath) {
+                        fileTempFiles.push(thumbnailPath);
+                    }
                 }
 
-                // Upload lên Cloudinary
-                const result = await cloudinary.uploader.upload(filePath, {
-                    resource_type: 'auto',
-                    folder: 'chat-app',
-                    eager: [
-                        { width: 300, height: 300, crop: 'pad', audio_codec: 'none' },
-                        { width: 600, height: 600, crop: 'lfill', audio_codec: 'none' }
-                    ],
-                    eager_async: true
+                // Calculate file hash before upload
+                const originalHash = await calculateFileHash(filePath);
+
+                // Upload lên Cloudinary với retry mechanism
+                const result = await retryWithBackoff(async () => {
+                    return await cloudinary.uploader.upload(filePath, {
+                        resource_type: 'auto',
+                        folder: 'chat-app',
+                        eager: [
+                            { width: 300, height: 300, crop: 'pad', audio_codec: 'none' },
+                            { width: 600, height: 600, crop: 'lfill', audio_codec: 'none' }
+                        ],
+                        eager_async: true
+                    });
                 });
 
                 // Upload thumbnail nếu có
                 let thumbnailUrl = null;
                 if (thumbnailPath) {
-                    const thumbnailResult = await cloudinary.uploader.upload(thumbnailPath, {
-                        folder: 'chat-app/thumbnails'
+                    const thumbnailResult = await retryWithBackoff(async () => {
+                        return await cloudinary.uploader.upload(thumbnailPath, {
+                            folder: 'chat-app/thumbnails'
+                        });
                     });
                     thumbnailUrl = thumbnailResult.secure_url;
                 }
 
                 // Cleanup files
-                const filesToDelete = [
-                    shouldDeleteOriginal ? file.path : null, // File gốc (chỉ xóa nếu cần)
-                    filePath !== file.path ? filePath : null, // File đã optimize (nếu khác file gốc)
-                    thumbnailPath  // Thumbnail (nếu có)
-                ].filter(Boolean); // Lọc bỏ các giá trị null/undefined
-
-                await Promise.all(
-                    filesToDelete.map(file =>
-                        fs.unlink(file).catch(err =>
-                            console.error(`Error deleting file ${file}:`, err)
-                        )
-                    )
-                );
+                await cleanupTempFiles(fileTempFiles);
 
                 return {
                     url: result.secure_url,
@@ -258,22 +275,27 @@ exports.uploadMultipleMedia = async (req, res) => {
                     width: result.width,
                     height: result.height,
                     format: result.format,
-                    size: result.bytes
+                    size: result.bytes,
+                    hash: originalHash
                 };
             } catch (error) {
-                console.error('Error uploading file:', error);
-                return {
-                    error: true,
-                    message: `Error uploading ${file.originalname}: ${error.message}`
-                };
+                // Cleanup temp files in case of error
+                await cleanupTempFiles(fileTempFiles);
+                throw error;
             }
         });
 
         const results = await Promise.all(uploadPromises);
         res.json(results);
     } catch (error) {
+        // Cleanup all temp files in case of error
+        await cleanupTempFiles(tempFiles);
+
         console.error('Multiple upload error:', error);
-        res.status(500).json({ message: 'Error uploading files' });
+        res.status(500).json({
+            message: 'Error uploading files',
+            error: error.message
+        });
     }
 };
 
