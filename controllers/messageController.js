@@ -5,18 +5,26 @@ const cloudinary = require('cloudinary').v2;
 // Send message
 exports.sendMessage = async (req, res) => {
     try {
-        const { conversationId, text, messageType = "text" } = req.body;
+        const { conversationId, text = '', messageType = 'text', attachments = [] } = req.body;
         const senderId = req.user._id;
 
         console.log('Creating new message with data:', {
             conversationId,
             senderId,
             text,
-            messageType
+            messageType,
+            attachments
         });
 
-        if (!conversationId || !text) {
-            return res.status(400).json({ message: "Conversation ID and text are required" });
+        // Validate
+        if (!conversationId) {
+            return res.status(400).json({ message: "Conversation ID is required" });
+        }
+
+        // Check if both text and attachments are empty
+        const trimmedText = text.trim();
+        if (trimmedText === '' && (!attachments || attachments.length === 0)) {
+            return res.status(400).json({ message: "Message must contain text or attachments" });
         }
 
         const conversation = await Conversation.findById(conversationId);
@@ -24,39 +32,34 @@ exports.sendMessage = async (req, res) => {
             return res.status(404).json({ message: "Conversation not found" });
         }
 
-        console.log('Found conversation:', conversation);
-
         const message = new Message({
             conversationId,
             senderId,
-            text,
-            messageType
+            text: trimmedText,
+            messageType,
+            attachments, // ensure Message schema supports this
         });
 
-        console.log('Saving message to database...');
         const savedMessage = await message.save();
-        console.log('Message saved successfully:', savedMessage);
 
         conversation.lastMessage = savedMessage._id;
         conversation.updatedAt = new Date();
-        console.log('Updating conversation with new message...');
         await conversation.save();
-        console.log('Conversation updated successfully');
 
-        // Populate dữ liệu cần thiết để gửi lại
         const populatedConversation = await Conversation.findById(conversationId)
             .populate("participants", "username avatar status lastSeen")
             .populate("lastMessage");
 
-        // Emit đến tất cả client trong phòng
+        // Socket emit
         req.app.get('io').to(conversationId).emit("receiveMessage", {
             message: savedMessage,
             conversation: populatedConversation,
         });
 
-        // Emit conversation update đến từng participant
         populatedConversation.participants.forEach(participant => {
-            req.app.get('io').to(participant._id.toString()).emit("conversationUpdated", populatedConversation);
+            req.app.get('io')
+                .to(participant._id.toString())
+                .emit("conversationUpdated", populatedConversation);
         });
 
         res.status(201).json(savedMessage);
@@ -65,6 +68,7 @@ exports.sendMessage = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+
 
 // Get messages for a conversation
 exports.getMessages = async (req, res) => {
