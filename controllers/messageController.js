@@ -164,45 +164,46 @@ exports.reactToMessage = async (req, res) => {
             return res.status(404).json({ message: 'Message not found' });
         }
 
-        // Add or update reaction
         const reactionIndex = message.reactions.findIndex(
             r => r.userId.toString() === userId.toString()
         );
         console.log('Debug - Reaction index:', reactionIndex);
 
-        if (reactionIndex > -1) {
-            // Update existing reaction
-            message.reactions[reactionIndex].emoji = emoji;
-            console.log('Debug - Updated existing reaction');
+        if (!emoji || emoji.trim() === '') {
+            // Nếu emoji rỗng → xóa reaction nếu có
+            if (reactionIndex > -1) {
+                message.reactions.splice(reactionIndex, 1);
+                console.log('Debug - Removed reaction');
+            } else {
+                console.log('Debug - No reaction to remove');
+            }
         } else {
-            // Add new reaction
-            message.reactions.push({ userId, emoji });
-            console.log('Debug - Added new reaction');
+            if (reactionIndex > -1) {
+                message.reactions[reactionIndex].emoji = emoji;
+                console.log('Debug - Updated existing reaction');
+            } else {
+                message.reactions.push({ userId, emoji });
+                console.log('Debug - Added new reaction');
+            }
         }
 
         await message.save();
-        console.log('Debug - Saved message with new reaction');
+        console.log('Debug - Saved message with reaction changes');
 
         // Emit socket event
         req.app.get('io').to(message.conversationId).emit('messageReaction', {
             messageId: message._id,
-            reaction: {
-                userId,
-                emoji
-            }
+            reaction: emoji
+                ? { userId, emoji }
+                : { userId, removed: true }
         });
 
         res.json(message);
     } catch (error) {
         console.error('React to message error:', error);
-        console.error('Error details:', {
-            message: error.message,
-            stack: error.stack
-        });
         res.status(500).json({ message: 'Error reacting to message' });
     }
 };
-
 // Mark message as read
 exports.markMessageAsRead = async (req, res) => {
     try {
