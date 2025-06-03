@@ -151,8 +151,16 @@ exports.reactToMessage = async (req, res) => {
         const { emoji } = req.body;
         const userId = req.user._id;
 
+        console.log('Debug - React to message request:');
+        console.log('Message ID:', messageId);
+        console.log('User ID:', userId);
+        console.log('Emoji:', emoji);
+
         const message = await Message.findById(messageId);
+        console.log('Debug - Found message:', message);
+
         if (!message) {
+            console.log('Debug - Message not found with ID:', messageId);
             return res.status(404).json({ message: 'Message not found' });
         }
 
@@ -160,16 +168,20 @@ exports.reactToMessage = async (req, res) => {
         const reactionIndex = message.reactions.findIndex(
             r => r.userId.toString() === userId.toString()
         );
+        console.log('Debug - Reaction index:', reactionIndex);
 
         if (reactionIndex > -1) {
             // Update existing reaction
             message.reactions[reactionIndex].emoji = emoji;
+            console.log('Debug - Updated existing reaction');
         } else {
             // Add new reaction
             message.reactions.push({ userId, emoji });
+            console.log('Debug - Added new reaction');
         }
 
         await message.save();
+        console.log('Debug - Saved message with new reaction');
 
         // Emit socket event
         req.app.get('io').to(message.conversationId).emit('messageReaction', {
@@ -183,6 +195,10 @@ exports.reactToMessage = async (req, res) => {
         res.json(message);
     } catch (error) {
         console.error('React to message error:', error);
+        console.error('Error details:', {
+            message: error.message,
+            stack: error.stack
+        });
         res.status(500).json({ message: 'Error reacting to message' });
     }
 };

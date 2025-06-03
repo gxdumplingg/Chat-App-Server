@@ -230,10 +230,10 @@
  *         description: Lỗi server
  * 
  * /message/{messageId}/react:
- *   post:
+ *   put:
  *     tags:
  *       - Messages
- *     summary: Thêm reaction cho tin nhắn
+ *     summary: Thêm hoặc cập nhật reaction cho tin nhắn
  *     description: Thêm hoặc cập nhật emoji reaction cho tin nhắn
  *     security:
  *       - bearerAuth: []
@@ -252,7 +252,7 @@
  *             $ref: '#/components/schemas/ReactToMessageRequest'
  *     responses:
  *       200:
- *         description: Thêm reaction thành công
+ *         description: Thêm/cập nhật reaction thành công
  *         content:
  *           application/json:
  *             schema:

@@ -149,15 +149,30 @@ exports.uploadMedia = async (req, res) => {
 
         // Upload lên Cloudinary với retry mechanism
         const result = await retryWithBackoff(async () => {
-            return await cloudinary.uploader.upload(filePath, {
+            const uploadOptions = {
                 resource_type: 'auto',
                 folder: 'chat-app',
                 eager: [
-                    { width: 300, height: 300, crop: 'pad', audio_codec: 'none' },
-                    { width: 600, height: 600, crop: 'lfill', audio_codec: 'none' }
+                    { width: 300, height: 300, crop: 'pad', audio_codec: 'none' }
                 ],
                 eager_async: true
-            });
+            };
+
+            // Thêm cấu hình đặc biệt cho video
+            if (req.file.mimetype.startsWith('video/')) {
+                uploadOptions.resource_type = 'video';
+                uploadOptions.eager = [
+                    {
+                        format: 'mp4',
+                        video_codec: 'auto',
+                        audio_codec: 'auto',
+                        quality: 'auto'
+                    }
+                ];
+                uploadOptions.eager_async = true;
+            }
+
+            return await cloudinary.uploader.upload(filePath, uploadOptions);
         });
 
         // Upload thumbnail nếu có
@@ -183,7 +198,9 @@ exports.uploadMedia = async (req, res) => {
             height: result.height,
             format: result.format,
             size: result.bytes,
-            hash: originalHash
+            hash: originalHash,
+            duration: result.duration,
+            videoUrl: req.file.mimetype.startsWith('video/') ? result.secure_url : null
         });
     } catch (error) {
         // Cleanup temp files in case of error
@@ -242,15 +259,30 @@ exports.uploadMultipleMedia = async (req, res) => {
 
                 // Upload lên Cloudinary với retry mechanism
                 const result = await retryWithBackoff(async () => {
-                    return await cloudinary.uploader.upload(filePath, {
+                    const uploadOptions = {
                         resource_type: 'auto',
                         folder: 'chat-app',
                         eager: [
-                            { width: 300, height: 300, crop: 'pad', audio_codec: 'none' },
-                            { width: 600, height: 600, crop: 'lfill', audio_codec: 'none' }
+                            { width: 300, height: 300, crop: 'pad', audio_codec: 'none' }
                         ],
                         eager_async: true
-                    });
+                    };
+
+                    // Thêm cấu hình đặc biệt cho video
+                    if (file.mimetype.startsWith('video/')) {
+                        uploadOptions.resource_type = 'video';
+                        uploadOptions.eager = [
+                            {
+                                format: 'mp4',
+                                video_codec: 'auto',
+                                audio_codec: 'auto',
+                                quality: 'auto'
+                            }
+                        ];
+                        uploadOptions.eager_async = true;
+                    }
+
+                    return await cloudinary.uploader.upload(filePath, uploadOptions);
                 });
 
                 // Upload thumbnail nếu có
@@ -276,7 +308,9 @@ exports.uploadMultipleMedia = async (req, res) => {
                     height: result.height,
                     format: result.format,
                     size: result.bytes,
-                    hash: originalHash
+                    hash: originalHash,
+                    duration: result.duration,
+                    videoUrl: file.mimetype.startsWith('video/') ? result.secure_url : null
                 };
             } catch (error) {
                 // Cleanup temp files in case of error
