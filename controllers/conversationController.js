@@ -93,15 +93,15 @@ exports.updateConversation = async (req, res) => {
             return res.status(404).json({ message: 'Conversation not found' });
         }
 
-        if (name) conversation.name = name;
-        if (avatar) conversation.avatar = avatar;
+        if (name) { conversation.name = name; }
+        if (avatar) { conversation.avatar = avatar; }
 
         await conversation.save();
 
         // Emit event cho tất cả participants
         conversation.participants.forEach(participant => {
             io.emit('conversationUpdated', {
-                conversation: conversation, // đã populate lastMessage
+                conversation: conversation,
                 userId: participant._id.toString()
             });
         });

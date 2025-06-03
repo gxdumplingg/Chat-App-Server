@@ -19,7 +19,7 @@ router.get("/friends", auth, userController.getFriends);
 router.post('/friends', auth, userController.addFriend);
 
 // Remove friend
-router.delete('/friends/:friendId', auth, userController.removeFriend);
+router.delete('/friends/:friendId', auth, userController.unfriend);
 
 // Get friend requests
 router.get('/friend-requests/:userId', auth, userController.getFriendRequests);

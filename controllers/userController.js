@@ -106,33 +106,54 @@ exports.addFriend = async (req, res) => {
     }
 };
 
-// Remove friend
-exports.removeFriend = async (req, res) => {
+// Unfriend
+exports.unfriend = async (req, res) => {
     try {
+        const userId = req.user._id;
         const { friendId } = req.params;
 
-        // Kiểm tra friendId có tồn tại
+        // Xóa userId khỏi friends của friend và ngược lại
+        const user = await User.findById(userId);
         const friend = await User.findById(friendId);
-        if (!friend) {
+
+        if (!user || !friend) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Xóa bạn
-        const user = await User.findById(req.user._id);
+        // Cập nhật danh sách bạn bè của cả hai người dùng
         user.friends = user.friends.filter(id => id.toString() !== friendId);
-        friend.friends = friend.friends.filter(id => id.toString() !== req.user._id);
+        friend.friends = friend.friends.filter(id => id.toString() !== userId.toString());
 
-        await user.save();
-        await friend.save();
+        // Lưu thay đổi cho cả hai người dùng
+        await Promise.all([
+            user.save(),
+            friend.save()
+        ]);
 
-        // Gửi thông báo realtime
-        const io = req.app.get('io');
-        io.to(friendId.toString()).emit('friendRemoved', {
-            friendId: req.user._id
+        // Xóa request (Friend document) nếu tồn tại
+        await Friend.deleteOne({
+            $or: [
+                { sender: userId, receiver: friendId },
+                { sender: friendId, receiver: userId }
+            ]
         });
 
-        res.json({ message: 'Friend removed successfully' });
+        // Gửi thông báo realtime cho cả hai người dùng
+        const io = req.app.get('io');
+        io.to(friendId.toString()).emit('friendRemoved', {
+            userId: userId.toString()
+        });
+        io.to(userId.toString()).emit('friendRemoved', {
+            userId: friendId.toString()
+        });
+
+        res.json({
+            message: 'Unfriend successfully',
+            updatedUser: user,
+            updatedFriend: friend
+        });
     } catch (error) {
+        console.error('Unfriend error:', error);
         res.status(500).json({ message: error.message });
     }
 };

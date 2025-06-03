@@ -13,9 +13,73 @@
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Số lượng kết quả mỗi trang
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Từ khóa tìm kiếm
  *     responses:
  *       200:
  *         description: Danh sách người dùng
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/User'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *       401:
+ *         description: Không có quyền truy cập
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
+/**
+ * @swagger
+ * /users/search:
+ *   get:
+ *     summary: Tìm kiếm người dùng
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Từ khóa tìm kiếm (username hoặc email)
+ *     responses:
+ *       200:
+ *         description: Danh sách người dùng tìm thấy
  *         content:
  *           application/json:
  *             schema:
@@ -24,10 +88,6 @@
  *                 $ref: '#/components/schemas/User'
  *       401:
  *         description: Không có quyền truy cập
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  */
 
 /**
@@ -111,6 +171,38 @@
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Không có quyền truy cập
+ */
+
+
+/**
+ * @swagger
+ * /users/friends/{friendId}:
+ *   delete:
+ *     summary: Hủy kết bạn
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: friendId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của người dùng muốn hủy kết bạn
+ *     responses:
+ *       200:
+ *         description: Hủy kết bạn thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Không tìm thấy người dùng
  */
 
 /**
@@ -274,4 +366,58 @@
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/User'
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     User:
+ *       type: object
+ *       properties:
+ *         _id:
+ *           type: string
+ *         username:
+ *           type: string
+ *         email:
+ *           type: string
+ *         avatar:
+ *           type: object
+ *           properties:
+ *             url:
+ *               type: string
+ *             publicId:
+ *               type: string
+ *         status:
+ *           type: string
+ *           enum: [online, offline]
+ *         lastSeen:
+ *           type: string
+ *           format: date-time
+ *         friends:
+ *           type: array
+ *           items:
+ *             type: string
+ * 
+ *     FriendRequest:
+ *       type: object
+ *       properties:
+ *         _id:
+ *           type: string
+ *         sender:
+ *           $ref: '#/components/schemas/User'
+ *         receiver:
+ *           $ref: '#/components/schemas/User'
+ *         status:
+ *           type: string
+ *           enum: [pending, accepted, rejected]
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ * 
+ *     Error:
+ *       type: object
+ *       properties:
+ *         message:
+ *           type: string
  */ 

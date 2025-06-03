@@ -5,7 +5,7 @@ const cloudinary = require('cloudinary').v2;
 // Send message
 exports.sendMessage = async (req, res) => {
     try {
-        const { conversationId, text = '', messageType = 'text', attachments = [] } = req.body;
+        const { conversationId, text = '', messageType = 'text', attachments = [], emojiData } = req.body;
         const senderId = req.user._id;
 
         console.log('Creating new message with data:', {
@@ -13,7 +13,8 @@ exports.sendMessage = async (req, res) => {
             senderId,
             text,
             messageType,
-            attachments
+            attachments,
+            emojiData
         });
 
         // Validate
@@ -21,10 +22,17 @@ exports.sendMessage = async (req, res) => {
             return res.status(400).json({ message: "Conversation ID is required" });
         }
 
-        // Check if both text and attachments are empty
-        const trimmedText = text.trim();
-        if (trimmedText === '' && (!attachments || attachments.length === 0)) {
-            return res.status(400).json({ message: "Message must contain text or attachments" });
+        // Validate message content based on messageType
+        if (messageType === 'emoji') {
+            if (!emojiData || !emojiData.emoji) {
+                return res.status(400).json({ message: "Emoji data is required for emoji messages" });
+            }
+        } else {
+            // For other message types, check text or attachments
+            const trimmedText = text.trim();
+            if (trimmedText === '' && (!attachments || attachments.length === 0)) {
+                return res.status(400).json({ message: "Message must contain text or attachments" });
+            }
         }
 
         const conversation = await Conversation.findById(conversationId);
@@ -35,9 +43,10 @@ exports.sendMessage = async (req, res) => {
         const message = new Message({
             conversationId,
             senderId,
-            text: trimmedText,
+            text: text.trim(),
             messageType,
-            attachments, // ensure Message schema supports this
+            attachments,
+            emojiData: messageType === 'emoji' ? emojiData : undefined
         });
 
         const savedMessage = await message.save();
