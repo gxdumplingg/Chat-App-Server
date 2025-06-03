@@ -215,6 +215,40 @@
 
 /**
  * @swagger
+ * /users/friend-request/{id}/reject:
+ *   put:
+ *     summary: Từ chối lời mời kết bạn
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của friend request
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 description: ID người từ chối lời mời
+ *     responses:
+ *       200:
+ *         description: Từ chối thành công
+ *       404:
+ *         description: Không tìm thấy lời mời
+ */
+
+/**
+ * @swagger
  * /users/status:
  *   put:
  *     summary: Cập nhật trạng thái người dùng

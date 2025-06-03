@@ -30,6 +30,9 @@ router.post('/friend-request', auth, userController.sendFriendRequest);
 // Accept friend request
 router.put('/friend-request/:id/accept', auth, userController.acceptFriendRequest);
 
+// Reject friend request
+router.put('/friend-request/:id/reject', auth, userController.rejectFriendRequest);
+
 // Search users
 router.get('/search', auth, userController.searchUsers);
 

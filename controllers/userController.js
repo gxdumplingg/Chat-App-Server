@@ -349,6 +349,24 @@ exports.acceptFriendRequest = async (req, res) => {
     }
 };
 
+exports.rejectFriendRequest = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const friendRequest = await Friend.findById(req.params.id);
+        if (!friendRequest) {
+            return res.status(404).json({ message: 'Friend request not found' });
+        }
+        if (friendRequest.receiver.toString() !== userId) {
+            return res.status(403).json({ message: 'Not authorized to reject this request' });
+        }
+        friendRequest.status = 'rejected';
+        await friendRequest.save();
+        res.json(friendRequest);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
+
 // Get friend requests
 exports.getFriendRequests = async (req, res) => {
     try {
