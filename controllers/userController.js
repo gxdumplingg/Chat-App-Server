@@ -370,13 +370,12 @@ exports.rejectFriendRequest = async (req, res) => {
         if (friendRequest.receiver.toString() !== userId) {
             return res.status(403).json({ message: 'Not authorized to reject this request' });
         }
-        friendRequest.status = 'rejected';
-        await friendRequest.save();
-        res.json(friendRequest);
+        await friendRequest.deleteOne();
+        res.json({ message: 'Friend request rejected and deleted' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
-}
+};
 
 // Get friend requests
 exports.getFriendRequests = async (req, res) => {
