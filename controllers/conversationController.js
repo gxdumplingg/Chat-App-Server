@@ -8,23 +8,12 @@ exports.getConversations = async (req, res) => {
         const userId = req.user._id;
         console.log('Getting conversations for user:', userId);
 
-        // Kiểm tra tất cả conversations trong DB
-        const allConversations = await Conversation.find({});
-        console.log('All conversations in DB:', allConversations);
-
-        // Tìm conversations với ObjectId
+        // Tìm tất cả conversations mà user tham gia
         const conversations = await Conversation.find({
             participants: new mongoose.Types.ObjectId(userId)
         })
-            .populate({
-                path: 'participants',
-                select: 'username avatar status lastSeen email',
-                model: 'User'
-            })
-            .populate({
-                path: 'lastMessage',
-                model: 'Message'
-            })
+            .populate('participants', 'username avatar status lastSeen email')
+            .populate('lastMessage')
             .sort({ updatedAt: -1 });
 
         console.log('Found conversations for user:', conversations);
@@ -35,7 +24,7 @@ exports.getConversations = async (req, res) => {
             console.log('First conversation lastMessage:', conversations[0].lastMessage);
         }
 
-        // Emit để cập nhật realtime cho user hiện tại
+        // Emit để cập nhật realtime cho user hiện tại (nếu cần)
         const io = req.app.get('io');
         io.to(userId.toString()).emit('conversationsUpdated', conversations);
 
@@ -111,7 +100,10 @@ exports.updateConversation = async (req, res) => {
 
         // Emit event cho tất cả participants
         conversation.participants.forEach(participant => {
-            io.to(participant._id.toString()).emit('conversationUpdated', conversation);
+            io.emit('conversationUpdated', {
+                conversation: conversation, // đã populate lastMessage
+                userId: participant._id.toString()
+            });
         });
 
         res.json(conversation);

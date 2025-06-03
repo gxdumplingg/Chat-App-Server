@@ -84,6 +84,7 @@
             let socket;
             let currentConversationId;
             let token;
+            let conversations = [];
 
             function connectSocket() {
                 token = document.getElementById('token').value;
@@ -114,11 +115,6 @@
                     console.log('Disconnected from socket');
                 });
 
-                socket.on('conversationsUpdated', (conversations) => {
-                    console.log('Conversations updated:', conversations);
-                    displayConversations(conversations);
-                });
-
                 socket.on('receiveMessage', (data) => {
                     console.log('New message received:', data);
                     if (data.conversation._id === currentConversationId) {
@@ -134,12 +130,17 @@
                     }
                 });
 
-                socket.on('conversationUpdated', (conversation) => {
-                    console.log('Conversation updated:', conversation);
-                    if (conversation._id === currentConversationId) {
-                        // Cập nhật lại danh sách tin nhắn
-                        getMessages(currentConversationId);
+                socket.on('conversationUpdated', (data) => {
+                    console.log('Conversation updated:', data);
+                    const updatedConv = data.conversation;
+                    // Tìm và cập nhật conversation trong mảng
+                    const idx = conversations.findIndex(c => c._id === updatedConv._id);
+                    if (idx !== -1) {
+                        conversations[idx] = updatedConv;
+                    } else {
+                        conversations.push(updatedConv);
                     }
+                    displayConversations(conversations);
                 });
             }
 
@@ -150,7 +151,7 @@
                             'Authorization': `Bearer ${token}`
                         }
                     });
-                    const conversations = await response.json();
+                    conversations = await response.json();
                     displayConversations(conversations);
                 } catch (error) {
                     console.error('Error getting conversations:', error);
@@ -164,12 +165,17 @@
                 conversations.forEach(conv => {
                     const div = document.createElement('div');
                     div.className = 'conversation';
-                    div.textContent = `Conversation ${conv._id}`;
+                    const lastMessage = conv.lastMessage ? conv.lastMessage.text : 'No messages';
+                    const updatedAt = new Date(conv.updatedAt).toLocaleString();
+                    div.innerHTML = `
+                        <div><strong>ID:</strong> ${conv._id}</div>
+                        <div><strong>Last Message:</strong> ${lastMessage}</div>
+                        <div><strong>Updated:</strong> ${updatedAt}</div>
+                    `;
                     div.onclick = () => {
                         document.querySelectorAll('.conversation').forEach(c => c.classList.remove('active'));
                         div.classList.add('active');
                         currentConversationId = conv._id;
-                        // Join conversation room
                         socket.emit('join', { conversationId: conv._id });
                         getMessages(conv._id);
                     };
@@ -218,40 +224,14 @@
                     return;
                 }
 
-                try {
-                    console.log('Sending message:', {
-                        conversationId: currentConversationId,
-                        text: text,
-                        messageType: 'text'
-                    });
+                // Emit event 'message' qua socket
+                socket.emit('message', {
+                    conversationId: currentConversationId,
+                    content: text,
+                    messageType: 'text'
+                });
 
-                    const response = await fetch('http://localhost:3000/message', {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            conversationId: currentConversationId,
-                            text: text,
-                            messageType: 'text'
-                        })
-                    });
-
-                    console.log('Response status:', response.status);
-                    const responseData = await response.json();
-                    console.log('Response data:', responseData);
-
-                    if (response.ok) {
-                        document.getElementById('messageText').value = '';
-                        // Không cần thêm tin nhắn ở đây vì sẽ nhận được từ socket event
-                    } else {
-                        alert(`Error: ${responseData.message || 'Unknown error'}`);
-                    }
-                } catch (error) {
-                    console.error('Error sending message:', error);
-                    alert(`Error sending message: ${error.message}`);
-                }
+                document.getElementById('messageText').value = '';
             }
         </script>
     </body>

@@ -11,6 +11,7 @@ const path = require('path');
 const fs = require('fs');
 const { cloudinary, upload } = require('./config/cloudinary');
 const User = require('./models/User');
+const Conversation = require('./models/Conversation');
 const { swaggerUi, swaggerSpec } = require('./docs/swagger');
 
 // Load env variables
@@ -193,16 +194,48 @@ io.on('connection', (socket) => {
                 messageType,
                 attachments: attachments
             });
+            console.log('Saving message...');
             await message.save();
+            console.log('Message saved:', message);
 
             // Update conversation's last message
-            const Conversation = require('./models/Conversation');
-            const conversation = await Conversation.findByIdAndUpdate(conversationId, {
+            console.log('Updating conversation...');
+            await Conversation.findByIdAndUpdate(conversationId, {
                 lastMessage: message._id,
                 updatedAt: new Date()
-            }, { new: true })
+            });
+            console.log('Conversation updated');
+
+            // Lấy lại conversation đã populate đầy đủ
+            console.log('Populating updatedConversation...');
+            const updatedConversation = await Conversation.findById(conversationId)
                 .populate('participants', 'username avatar status lastSeen')
                 .populate('lastMessage');
+            console.log('updatedConversation:', updatedConversation);
+
+
+            if (updatedConversation && updatedConversation.lastMessage) {
+                console.log('updatedConversation.lastMessage.text:', updatedConversation.lastMessage.text);
+            } else {
+                console.log('updatedConversation hoặc lastMessage bị null');
+            }
+
+            // Gửi event conversationUpdated cho từng participant (nếu có onlineUsers Map)
+            updatedConversation.participants.forEach(participant => {
+                // Nếu có onlineUsers Map:
+                // const participantSocketId = onlineUsers.get(participant._id.toString());
+                // if (participantSocketId) {
+                //     io.to(participantSocketId).emit('conversationUpdated', {
+                //         conversation: updatedConversation,
+                //         userId: participant._id.toString()
+                //     });
+                // }
+                // Nếu không có, dùng io.emit (tất cả client sẽ nhận):
+                io.emit('conversationUpdated', {
+                    conversation: updatedConversation,
+                    userId: participant._id.toString()
+                });
+            });
 
             // Send message to all users in conversation
             io.to(conversationId).emit('message', {
@@ -215,13 +248,9 @@ io.on('connection', (socket) => {
                     attachments: message.attachments,
                     createdAt: message.createdAt
                 },
-                conversation: conversation
+                conversation: updatedConversation
             });
 
-            // Send conversation update to all participants
-            conversation.participants.forEach(participant => {
-                io.to(participant._id.toString()).emit('conversationUpdated', conversation);
-            });
         } catch (error) {
             console.error('Error sending message:', error);
             socket.emit('error', { message: 'Error sending message' });
