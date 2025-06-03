@@ -336,7 +336,18 @@ exports.acceptFriendRequest = async (req, res) => {
         // Cập nhật trạng thái
         friendRequest.status = 'accepted';
         await friendRequest.save();
-
+        const sender = await User.findById(friendRequest.sender);
+        const receiver = await User.findById(friendRequest.receiver);
+        if (sender && receiver) {
+            if (!sender.friends.includes(receiver._id)) {
+                sender.friends.push(receiver._id);
+                await sender.save();
+            }
+            if (!receiver.friends.includes(sender._id)) {
+                receiver.friends.push(sender._id);
+                await receiver.save();
+            }
+        }
         // Gửi thông báo realtime
         req.app.get('io').to(friendRequest.sender.toString()).emit('friendRequestAccepted', {
             requestId: friendRequest._id,
