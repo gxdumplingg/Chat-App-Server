@@ -115,12 +115,19 @@
 
 /**
  * @swagger
- * /users/friends/requests:
+ * /users/friend-requests/{userId}:
  *   get:
  *     summary: Lấy danh sách lời mời kết bạn
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của người dùng
  *     responses:
  *       200:
  *         description: Danh sách lời mời kết bạn
@@ -143,7 +150,7 @@
 
 /**
  * @swagger
- * /users/friends/requests:
+ * /users/friend-request:
  *   post:
  *     summary: Gửi lời mời kết bạn
  *     tags: [Users]
@@ -156,44 +163,37 @@
  *           schema:
  *             type: object
  *             required:
- *               - userId
+ *               - senderId
+ *               - receiverId
  *             properties:
- *               userId:
+ *               senderId:
  *                 type: string
- *                 description: ID của người dùng muốn kết bạn
+ *                 description: ID người gửi lời mời
+ *               receiverId:
+ *                 type: string
+ *                 description: ID người nhận lời mời
  *     responses:
- *       200:
+ *       201:
  *         description: Gửi lời mời thành công
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
  *       400:
- *         description: Không thể gửi lời mời
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ *         description: Lời mời đã tồn tại
  */
 
 /**
  * @swagger
- * /users/friends/requests/{requestId}:
+ * /users/friend-request/{id}/accept:
  *   put:
- *     summary: Chấp nhận/từ chối lời mời kết bạn
+ *     summary: Chấp nhận lời mời kết bạn
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: requestId
+ *         name: id
  *         required: true
  *         schema:
  *           type: string
- *         description: ID của lời mời kết bạn
+ *         description: ID của friend request
  *     requestBody:
  *       required: true
  *       content:
@@ -201,21 +201,16 @@
  *           schema:
  *             type: object
  *             required:
- *               - status
+ *               - userId
  *             properties:
- *               status:
+ *               userId:
  *                 type: string
- *                 enum: [accepted, rejected]
+ *                 description: ID người chấp nhận lời mời
  *     responses:
  *       200:
- *         description: Cập nhật trạng thái thành công
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
+ *         description: Chấp nhận thành công
+ *       404:
+ *         description: Không tìm thấy lời mời
  */
 
 /**

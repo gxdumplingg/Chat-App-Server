@@ -166,6 +166,8 @@
                     const div = document.createElement('div');
                     div.className = 'conversation';
                     const lastMessage = conv.lastMessage ? conv.lastMessage.text : 'No messages';
+                    console.log('Render conversation:', conv);
+                    console.log('Render lastMessage:', conv.lastMessage);
                     const updatedAt = new Date(conv.updatedAt).toLocaleString();
                     div.innerHTML = `
                         <div><strong>ID:</strong> ${conv._id}</div>
