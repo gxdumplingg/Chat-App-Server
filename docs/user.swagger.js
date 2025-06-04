@@ -368,6 +368,75 @@
 
 /**
  * @swagger
+ * /users/avatar:
+ *   put:
+ *     summary: Cập nhật avatar người dùng
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               avatar:
+ *                 type: string
+ *                 format: binary
+ *                 description: File ảnh avatar (JPEG, PNG, GIF, WebP)
+ *     responses:
+ *       200:
+ *         description: Cập nhật avatar thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Avatar updated successfully
+ *                 avatar:
+ *                   type: object
+ *                   properties:
+ *                     url:
+ *                       type: string
+ *                       example: https://res.cloudinary.com/...
+ *                     publicId:
+ *                       type: string
+ *                       example: chat-app/avatars/...
+ *       400:
+ *         description: Không có file được upload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: No file uploaded
+ *       401:
+ *         description: Không có quyền truy cập
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Không tìm thấy người dùng
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Lỗi server
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
+/**
+ * @swagger
  * components:
  *   schemas:
  *     User:
