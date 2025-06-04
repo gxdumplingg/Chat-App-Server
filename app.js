@@ -11,6 +11,7 @@ const path = require('path');
 const fs = require('fs');
 const { cloudinary, upload } = require('./config/cloudinary');
 const User = require('./models/User');
+const Conversation = require('./models/Conversation');
 const { swaggerUi, swaggerSpec } = require('./docs/swagger');
 
 // Load env variables
@@ -30,6 +31,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static('public')); // Serve static files from public directory
 
 // Create temp directory if it doesn't exist
 const tempDir = path.join(__dirname, 'temp');
@@ -58,7 +60,7 @@ app.use((req, res, next) => {
 });
 
 // MongoDB connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/chat-app', {
+mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
     serverSelectionTimeoutMS: 30000,
@@ -73,7 +75,15 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/chat-app'
 
 // Socket.IO setup
 const io = socketIo(server, {
-    cors: corsOptions
+    cors: {
+        origin: ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500", "http://127.0.0.1:5500"],
+        methods: ["GET", "POST"],
+        credentials: true
+    },
+    transports: ['websocket', 'polling'],
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    allowEIO3: true
 });
 
 // Routes
@@ -91,22 +101,29 @@ app.use('/conversations', auth, conversationRoute);
 app.use('/media', auth, mediaRoute);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
+// Test route for WebSocket
+app.get('/test', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'test.html'));
+});
+
 // Make io accessible to routes
 app.set('io', io);
 
 // Socket.IO authentication middleware
 io.use((socket, next) => {
-    const { token } = socket.handshake.auth;
-    if (!token) {
-        return next(new Error('Authentication error'));
-    }
-
     try {
+        // Check token in auth object or query parameters
+        const token = socket.handshake.auth.token || socket.handshake.query.token;
+        if (!token) {
+            return next(new Error('Authentication error: No token provided'));
+        }
+
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         socket.userId = decoded.userId;
         next();
     } catch (error) {
-        return next(new Error('Authentication error'));
+        console.error('Socket authentication error:', error);
+        return next(new Error('Authentication error: Invalid token'));
     }
 });
 
@@ -115,7 +132,7 @@ const onlineUsers = new Map();
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-    console.log('New client connected:', socket.id);
+    console.log('New client connected:', socket.id, 'User ID:', socket.userId);
 
     // Add user to online users
     onlineUsers.set(socket.userId, socket.id);
@@ -128,154 +145,160 @@ io.on('connection', (socket) => {
         // Notify all friends about the status change
         io.emit('userStatusChanged', {
             userId: socket.userId,
-            status: 'online'
+            status: 'online',
+            lastSeen: new Date()
         });
+    }).catch(error => {
+        console.error('Error updating user status:', error);
     });
 
-    // Get online friends
-    socket.on('getOnlineFriends', async (userId) => {
-        try {
-            const user = await User.findById(userId).populate('friends', 'username avatar status lastSeen');
-            if (!user) {
-                console.log('User not found:', userId);
-                return socket.emit('onlineFriends', []);
-            }
+    // Handle authentication success
+    socket.emit('auth', {
+        status: 'success',
+        userId: socket.userId
+    });
 
-            // Ensure friends array exists
-            const friends = user.friends || [];
-            const onlineFriends = friends.filter(friend =>
-                onlineUsers.has(friend._id.toString())
-            );
-            socket.emit('onlineFriends', onlineFriends);
+    // Handle join conversation
+    socket.on('join', (data) => {
+        try {
+            const { conversationId } = data;
+            socket.join(conversationId);
+            console.log(`User ${socket.userId} joined conversation: ${conversationId}`);
+            socket.emit('joined', {
+                conversationId,
+                status: 'success',
+                userId: socket.userId
+            });
         } catch (error) {
-            console.error('Error getting online friends:', error);
-            socket.emit('onlineFriends', []);
+            console.error('Error joining conversation:', error);
+            socket.emit('error', { message: 'Error joining conversation' });
         }
     });
 
-    // Update user status
-    socket.on('updateUserStatus', async (data) => {
+    // Handle message sending
+    socket.on('message', async (data) => {
         try {
-            const { status } = data;
-            await User.findByIdAndUpdate(socket.userId, {
-                status,
-                lastSeen: new Date()
-            });
-
-            // Notify all friends about the status change
-            io.emit('userStatusChanged', {
-                userId: socket.userId,
-                status
-            });
-        } catch (error) {
-            console.error('Error updating user status:', error);
-        }
-    });
-
-    // Join conversation room
-    socket.on('joinConversation', (conversationId) => {
-        socket.join(conversationId);
-        console.log(`User joined conversation: ${conversationId}`);
-    });
-
-    // Leave conversation
-    socket.on('leaveConversation', (conversationId) => {
-        socket.leave(conversationId);
-        console.log(`User left conversation: ${conversationId}`);
-    });
-
-    // Send message
-    socket.on('sendMessage', async (data) => {
-        try {
-            const { conversationId, senderId, text, messageType = 'text' } = data;
+            const {
+                conversationId,
+                content,
+                messageType = 'text',
+                attachments = [] // Array of media URLs
+            } = data;
 
             // Lưu message vào database
             const Message = require('./models/Message');
             const message = new Message({
                 conversationId: conversationId,
-                senderId: senderId,
-                text,
-                messageType
+                senderId: socket.userId,
+                text: content,
+                messageType,
+                attachments: attachments
             });
+            console.log('Saving message...');
             await message.save();
+            console.log('Message saved:', message);
 
-            // Cập nhật lastMessage của conversation
-            const Conversation = require('./models/Conversation');
-            const conversation = await Conversation.findByIdAndUpdate(conversationId, {
+            // Update conversation's last message
+            console.log('Updating conversation...');
+            await Conversation.findByIdAndUpdate(conversationId, {
                 lastMessage: message._id,
                 updatedAt: new Date()
-            }, { new: true })
+            });
+            console.log('Conversation updated');
+
+            // Lấy lại conversation đã populate đầy đủ
+            console.log('Populating updatedConversation...');
+            const updatedConversation = await Conversation.findById(conversationId)
                 .populate('participants', 'username avatar status lastSeen')
                 .populate('lastMessage');
+            console.log('updatedConversation:', updatedConversation);
 
-            // Gửi message đến tất cả users trong conversation
-            io.to(conversationId).emit('receiveMessage', {
-                message: message,
-                conversation: conversation
+
+            if (updatedConversation && updatedConversation.lastMessage) {
+                console.log('updatedConversation.lastMessage.text:', updatedConversation.lastMessage.text);
+            } else {
+                console.log('updatedConversation hoặc lastMessage bị null');
+            }
+
+            // Gửi event conversationUpdated cho từng participant (nếu có onlineUsers Map)
+            updatedConversation.participants.forEach(participant => {
+                // Nếu có onlineUsers Map:
+                // const participantSocketId = onlineUsers.get(participant._id.toString());
+                // if (participantSocketId) {
+                //     io.to(participantSocketId).emit('conversationUpdated', {
+                //         conversation: updatedConversation,
+                //         userId: participant._id.toString()
+                //     });
+                // }
+                // Nếu không có, dùng io.emit (tất cả client sẽ nhận):
+                io.emit('conversationUpdated', {
+                    conversation: updatedConversation,
+                    userId: participant._id.toString()
+                });
             });
 
-            // Gửi cập nhật conversation đến tất cả participants
-            conversation.participants.forEach(participant => {
-                io.to(participant._id.toString()).emit('conversationUpdated', conversation);
+            // Send message to all users in conversation
+            io.to(conversationId).emit('message', {
+                message: {
+                    _id: message._id,
+                    conversationId: message.conversationId,
+                    senderId: message.senderId,
+                    text: message.text,
+                    messageType: message.messageType,
+                    attachments: message.attachments,
+                    createdAt: message.createdAt
+                },
+                conversation: updatedConversation
             });
+
         } catch (error) {
             console.error('Error sending message:', error);
             socket.emit('error', { message: 'Error sending message' });
         }
     });
 
-    // Get conversations
-    socket.on('getConversations', async (userId) => {
+    // Handle typing status
+    socket.on('typing', (data) => {
         try {
-            const Conversation = require('./models/Conversation');
-            const conversations = await Conversation.find({
-                participants: userId
-            })
-                .populate('participants', 'username avatar status lastSeen')
-                .populate('lastMessage')
-                .sort({ updatedAt: -1 });
-
-            socket.emit('conversations', conversations);
+            const { conversationId, isTyping } = data;
+            socket.to(conversationId).emit('typing', {
+                userId: socket.userId,
+                isTyping: isTyping,
+                conversationId: conversationId
+            });
         } catch (error) {
-            console.error('Error getting conversations:', error);
-            socket.emit('error', { message: 'Error getting conversations' });
+            console.error('Error handling typing status:', error);
         }
     });
 
-    // Update message status
+    // Handle message status update
     socket.on('updateMessageStatus', async (data) => {
         try {
-            const { messageId, userId, status } = data;
+            const { messageId, status } = data;
             const Message = require('./models/Message');
             const message = await Message.findById(messageId);
 
             if (message) {
-                message.status.set(userId, status);
+                message.status = status;
                 await message.save();
 
-                // Gửi cập nhật status đến tất cả users trong conversation
+                // Send status update to all users in conversation
                 io.to(message.conversationId.toString()).emit('messageStatusUpdated', {
                     messageId: message._id,
-                    userId: userId,
-                    status: status
+                    userId: socket.userId,
+                    status: status,
+                    conversationId: message.conversationId
                 });
             }
         } catch (error) {
             console.error('Error updating message status:', error);
+            socket.emit('error', { message: 'Error updating message status' });
         }
     });
 
-    // Handle typing status
-    socket.on('typing', (data) => {
-        socket.to(data.conversationId).emit('userTyping', {
-            userId: data.userId,
-            isTyping: data.isTyping
-        });
-    });
-
-    // Disconnect
+    // Handle disconnection
     socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
+        console.log('Client disconnected:', socket.id, 'User ID:', socket.userId);
 
         // Remove user from online users
         onlineUsers.delete(socket.userId);
@@ -288,8 +311,11 @@ io.on('connection', (socket) => {
             // Notify all friends about the status change
             io.emit('userStatusChanged', {
                 userId: socket.userId,
-                status: 'offline'
+                status: 'offline',
+                lastSeen: new Date()
             });
+        }).catch(error => {
+            console.error('Error updating user status on disconnect:', error);
         });
     });
 });

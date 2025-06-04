@@ -5,18 +5,34 @@ const cloudinary = require('cloudinary').v2;
 // Send message
 exports.sendMessage = async (req, res) => {
     try {
-        const { conversationId, text, messageType = "text" } = req.body;
+        const { conversationId, text = '', messageType = 'text', attachments = [], emojiData } = req.body;
         const senderId = req.user._id;
 
         console.log('Creating new message with data:', {
             conversationId,
             senderId,
             text,
-            messageType
+            messageType,
+            attachments,
+            emojiData
         });
 
-        if (!conversationId || !text) {
-            return res.status(400).json({ message: "Conversation ID and text are required" });
+        // Validate
+        if (!conversationId) {
+            return res.status(400).json({ message: "Conversation ID is required" });
+        }
+
+        // Validate message content based on messageType
+        if (messageType === 'emoji') {
+            if (!emojiData || !emojiData.emoji) {
+                return res.status(400).json({ message: "Emoji data is required for emoji messages" });
+            }
+        } else {
+            // For other message types, check text or attachments
+            const trimmedText = text.trim();
+            if (trimmedText === '' && (!attachments || attachments.length === 0)) {
+                return res.status(400).json({ message: "Message must contain text or attachments" });
+            }
         }
 
         const conversation = await Conversation.findById(conversationId);
@@ -24,47 +40,48 @@ exports.sendMessage = async (req, res) => {
             return res.status(404).json({ message: "Conversation not found" });
         }
 
-        console.log('Found conversation:', conversation);
-
         const message = new Message({
             conversationId,
             senderId,
-            text,
-            messageType
+            text: text.trim(),
+            messageType,
+            attachments,
+            emojiData: messageType === 'emoji' ? emojiData : undefined
         });
 
-        console.log('Saving message to database...');
         const savedMessage = await message.save();
-        console.log('Message saved successfully:', savedMessage);
 
         conversation.lastMessage = savedMessage._id;
         conversation.updatedAt = new Date();
-        console.log('Updating conversation with new message...');
         await conversation.save();
-        console.log('Conversation updated successfully');
 
-        // Populate dữ liệu cần thiết để gửi lại
         const populatedConversation = await Conversation.findById(conversationId)
             .populate("participants", "username avatar status lastSeen")
             .populate("lastMessage");
 
-        // Emit đến tất cả client trong phòng
+        // Populate sender information
+        const populatedMessage = await Message.findById(savedMessage._id)
+            .populate("senderId", "username avatar");
+
+        // Socket emit
         req.app.get('io').to(conversationId).emit("receiveMessage", {
-            message: savedMessage,
+            message: populatedMessage,
             conversation: populatedConversation,
         });
 
-        // Emit conversation update đến từng participant
         populatedConversation.participants.forEach(participant => {
-            req.app.get('io').to(participant._id.toString()).emit("conversationUpdated", populatedConversation);
+            req.app.get('io')
+                .to(participant._id.toString())
+                .emit("conversationUpdated", populatedConversation);
         });
 
-        res.status(201).json(savedMessage);
+        res.status(201).json(populatedMessage);
     } catch (error) {
         console.error('Error in message creation:', error);
         res.status(500).json({ message: error.message });
     }
 };
+
 
 // Get messages for a conversation
 exports.getMessages = async (req, res) => {
@@ -134,33 +151,51 @@ exports.reactToMessage = async (req, res) => {
         const { emoji } = req.body;
         const userId = req.user._id;
 
+        console.log('Debug - React to message request:');
+        console.log('Message ID:', messageId);
+        console.log('User ID:', userId);
+        console.log('Emoji:', emoji);
+
         const message = await Message.findById(messageId);
+        console.log('Debug - Found message:', message);
+
         if (!message) {
+            console.log('Debug - Message not found with ID:', messageId);
             return res.status(404).json({ message: 'Message not found' });
         }
 
-        // Add or update reaction
         const reactionIndex = message.reactions.findIndex(
             r => r.userId.toString() === userId.toString()
         );
+        console.log('Debug - Reaction index:', reactionIndex);
 
-        if (reactionIndex > -1) {
-            // Update existing reaction
-            message.reactions[reactionIndex].emoji = emoji;
+        if (!emoji || emoji.trim() === '') {
+            // Nếu emoji rỗng → xóa reaction nếu có
+            if (reactionIndex > -1) {
+                message.reactions.splice(reactionIndex, 1);
+                console.log('Debug - Removed reaction');
+            } else {
+                console.log('Debug - No reaction to remove');
+            }
         } else {
-            // Add new reaction
-            message.reactions.push({ userId, emoji });
+            if (reactionIndex > -1) {
+                message.reactions[reactionIndex].emoji = emoji;
+                console.log('Debug - Updated existing reaction');
+            } else {
+                message.reactions.push({ userId, emoji });
+                console.log('Debug - Added new reaction');
+            }
         }
 
         await message.save();
+        console.log('Debug - Saved message with reaction changes');
 
         // Emit socket event
         req.app.get('io').to(message.conversationId).emit('messageReaction', {
             messageId: message._id,
-            reaction: {
-                userId,
-                emoji
-            }
+            reaction: emoji
+                ? { userId, emoji }
+                : { userId, removed: true }
         });
 
         res.json(message);
@@ -169,7 +204,6 @@ exports.reactToMessage = async (req, res) => {
         res.status(500).json({ message: 'Error reacting to message' });
     }
 };
-
 // Mark message as read
 exports.markMessageAsRead = async (req, res) => {
     try {

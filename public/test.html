@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Test Conversation Realtime</title>
+        <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+
+            #conversations {
+                border: 1px solid #ccc;
+                padding: 10px;
+                margin-bottom: 20px;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+
+            #messages {
+                border: 1px solid #ccc;
+                padding: 10px;
+                margin-bottom: 20px;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+
+            .message {
+                margin: 10px 0;
+                padding: 10px;
+                background: #f0f0f0;
+                border-radius: 5px;
+            }
+
+            .conversation {
+                margin: 10px 0;
+                padding: 10px;
+                background: #e0e0e0;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+
+            .conversation:hover {
+                background: #d0d0d0;
+            }
+
+            .active {
+                background: #b0b0b0 !important;
+            }
+        </style>
+    </head>
+
+    <body>
+        <h1>Test Conversation Realtime</h1>
+
+        <div>
+            <h2>Token</h2>
+            <input type="text" id="token" placeholder="Enter your JWT token" style="width: 100%; margin-bottom: 10px;">
+            <button onclick="connectSocket()">Connect</button>
+        </div>
+
+        <div>
+            <h2>Conversations</h2>
+            <div id="conversations"></div>
+        </div>
+
+        <div>
+            <h2>Messages</h2>
+            <div id="messages"></div>
+        </div>
+
+        <div>
+            <h2>Send Message</h2>
+            <input type="text" id="messageText" placeholder="Type your message" style="width: 70%;">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+
+        <script>
+            let socket;
+            let currentConversationId;
+            let token;
+            let conversations = [];
+
+            function connectSocket() {
+                token = document.getElementById('token').value;
+                if (!token) {
+                    alert('Please enter your token');
+                    return;
+                }
+
+                // Disconnect existing socket if any
+                if (socket) {
+                    socket.disconnect();
+                }
+
+                // Connect to socket.io
+                socket = io('http://localhost:3000', {
+                    auth: {
+                        token: token
+                    }
+                });
+
+                // Socket event listeners
+                socket.on('connect', () => {
+                    console.log('Connected to socket');
+                    getConversations();
+                });
+
+                socket.on('disconnect', () => {
+                    console.log('Disconnected from socket');
+                });
+
+                socket.on('receiveMessage', (data) => {
+                    console.log('New message received:', data);
+                    if (data.conversation._id === currentConversationId) {
+                        // Thêm tin nhắn mới vào danh sách
+                        const container = document.getElementById('messages');
+                        const div = document.createElement('div');
+                        div.className = 'message';
+                        const isCurrentUser = data.message.senderId._id === socket.userId;
+                        div.textContent = `${isCurrentUser ? 'You' : data.message.senderId.username}: ${data.message.text}`;
+                        container.appendChild(div);
+                        // Cuộn xuống tin nhắn mới nhất
+                        container.scrollTop = container.scrollHeight;
+                    }
+                });
+
+                socket.on('conversationUpdated', (data) => {
+                    console.log('Conversation updated:', data);
+                    const updatedConv = data.conversation;
+                    // Tìm và cập nhật conversation trong mảng
+                    const idx = conversations.findIndex(c => c._id === updatedConv._id);
+                    if (idx !== -1) {
+                        conversations[idx] = updatedConv;
+                    } else {
+                        conversations.push(updatedConv);
+                    }
+                    displayConversations(conversations);
+                });
+            }
+
+            async function getConversations() {
+                try {
+                    const response = await fetch('http://localhost:3000/conversations', {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    conversations = await response.json();
+                    displayConversations(conversations);
+                } catch (error) {
+                    console.error('Error getting conversations:', error);
+                }
+            }
+
+            function displayConversations(conversations) {
+                const container = document.getElementById('conversations');
+                container.innerHTML = '';
+
+                conversations.forEach(conv => {
+                    const div = document.createElement('div');
+                    div.className = 'conversation';
+                    const lastMessage = conv.lastMessage ? conv.lastMessage.text : 'No messages';
+                    console.log('Render conversation:', conv);
+                    console.log('Render lastMessage:', conv.lastMessage);
+                    const updatedAt = new Date(conv.updatedAt).toLocaleString();
+                    div.innerHTML = `
+                        <div><strong>ID:</strong> ${conv._id}</div>
+                        <div><strong>Last Message:</strong> ${lastMessage}</div>
+                        <div><strong>Updated:</strong> ${updatedAt}</div>
+                    `;
+                    div.onclick = () => {
+                        document.querySelectorAll('.conversation').forEach(c => c.classList.remove('active'));
+                        div.classList.add('active');
+                        currentConversationId = conv._id;
+                        socket.emit('join', { conversationId: conv._id });
+                        getMessages(conv._id);
+                    };
+                    container.appendChild(div);
+                });
+            }
+
+            async function getMessages(conversationId) {
+                try {
+                    const response = await fetch(`http://localhost:3000/message/${conversationId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    const messages = await response.json();
+                    displayMessages(messages);
+                } catch (error) {
+                    console.error('Error getting messages:', error);
+                }
+            }
+
+            function displayMessages(messages) {
+                const container = document.getElementById('messages');
+                container.innerHTML = '';
+
+                messages.forEach(msg => {
+                    const div = document.createElement('div');
+                    div.className = 'message';
+                    const isCurrentUser = msg.senderId._id === socket.userId;
+                    div.textContent = `${isCurrentUser ? 'You' : msg.senderId.username}: ${msg.text}`;
+                    container.appendChild(div);
+                });
+                // Cuộn xuống tin nhắn mới nhất
+                container.scrollTop = container.scrollHeight;
+            }
+
+            async function sendMessage() {
+                if (!currentConversationId) {
+                    alert('Please select a conversation first');
+                    return;
+                }
+
+                const text = document.getElementById('messageText').value;
+                if (!text) {
+                    alert('Please enter a message');
+                    return;
+                }
+
+                // Emit event 'message' qua socket
+                socket.emit('message', {
+                    conversationId: currentConversationId,
+                    content: text,
+                    messageType: 'text'
+                });
+
+                document.getElementById('messageText').value = '';
+            }
+        </script>
+    </body>
+
+</html>

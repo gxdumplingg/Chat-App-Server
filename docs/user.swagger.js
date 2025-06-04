@@ -13,9 +13,73 @@
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Số trang
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Số lượng kết quả mỗi trang
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Từ khóa tìm kiếm
  *     responses:
  *       200:
  *         description: Danh sách người dùng
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 users:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/User'
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     totalPages:
+ *                       type: integer
+ *       401:
+ *         description: Không có quyền truy cập
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
+/**
+ * @swagger
+ * /users/search:
+ *   get:
+ *     summary: Tìm kiếm người dùng
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: query
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Từ khóa tìm kiếm (username hoặc email)
+ *     responses:
+ *       200:
+ *         description: Danh sách người dùng tìm thấy
  *         content:
  *           application/json:
  *             schema:
@@ -24,10 +88,6 @@
  *                 $ref: '#/components/schemas/User'
  *       401:
  *         description: Không có quyền truy cập
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
  */
 
 /**
@@ -77,8 +137,6 @@
  *             properties:
  *               username:
  *                 type: string
- *               avatar:
- *                 type: string
  *     responses:
  *       200:
  *         description: Cập nhật thành công
@@ -111,16 +169,55 @@
  *               type: array
  *               items:
  *                 $ref: '#/components/schemas/User'
+ *       401:
+ *         description: Không có quyền truy cập
+ */
+
+
+/**
+ * @swagger
+ * /users/friends/{friendId}:
+ *   delete:
+ *     summary: Hủy kết bạn
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: friendId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của người dùng muốn hủy kết bạn
+ *     responses:
+ *       200:
+ *         description: Hủy kết bạn thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Không tìm thấy người dùng
  */
 
 /**
  * @swagger
- * /users/friends/requests:
+ * /users/friend-requests/{userId}:
  *   get:
  *     summary: Lấy danh sách lời mời kết bạn
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của người dùng
  *     responses:
  *       200:
  *         description: Danh sách lời mời kết bạn
@@ -143,7 +240,7 @@
 
 /**
  * @swagger
- * /users/friends/requests:
+ * /users/friend-request:
  *   post:
  *     summary: Gửi lời mời kết bạn
  *     tags: [Users]
@@ -156,44 +253,37 @@
  *           schema:
  *             type: object
  *             required:
- *               - userId
+ *               - senderId
+ *               - receiverId
  *             properties:
- *               userId:
+ *               senderId:
  *                 type: string
- *                 description: ID của người dùng muốn kết bạn
+ *                 description: ID người gửi lời mời
+ *               receiverId:
+ *                 type: string
+ *                 description: ID người nhận lời mời
  *     responses:
- *       200:
+ *       201:
  *         description: Gửi lời mời thành công
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
  *       400:
- *         description: Không thể gửi lời mời
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ *         description: Lời mời đã tồn tại
  */
 
 /**
  * @swagger
- * /users/friends/requests/{requestId}:
+ * /users/friend-request/{id}/accept:
  *   put:
- *     summary: Chấp nhận/từ chối lời mời kết bạn
+ *     summary: Chấp nhận lời mời kết bạn
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: requestId
+ *         name: id
  *         required: true
  *         schema:
  *           type: string
- *         description: ID của lời mời kết bạn
+ *         description: ID của friend request
  *     requestBody:
  *       required: true
  *       content:
@@ -201,21 +291,50 @@
  *           schema:
  *             type: object
  *             required:
- *               - status
+ *               - userId
  *             properties:
- *               status:
+ *               userId:
  *                 type: string
- *                 enum: [accepted, rejected]
+ *                 description: ID người chấp nhận lời mời
  *     responses:
  *       200:
- *         description: Cập nhật trạng thái thành công
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
+ *         description: Chấp nhận thành công
+ *       404:
+ *         description: Không tìm thấy lời mời
+ */
+
+/**
+ * @swagger
+ * /users/friend-request/{id}/reject:
+ *   put:
+ *     summary: Từ chối lời mời kết bạn
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID của friend request
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - userId
+ *             properties:
+ *               userId:
+ *                 type: string
+ *                 description: ID người từ chối lời mời
+ *     responses:
+ *       200:
+ *         description: Từ chối thành công
+ *       404:
+ *         description: Không tìm thấy lời mời
  */
 
 /**
@@ -245,4 +364,127 @@
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/User'
+ */
+
+/**
+ * @swagger
+ * /users/avatar:
+ *   put:
+ *     summary: Cập nhật avatar người dùng
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               avatar:
+ *                 type: string
+ *                 format: binary
+ *                 description: File ảnh avatar (JPEG, PNG, GIF, WebP)
+ *     responses:
+ *       200:
+ *         description: Cập nhật avatar thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Avatar updated successfully
+ *                 avatar:
+ *                   type: object
+ *                   properties:
+ *                     url:
+ *                       type: string
+ *                       example: https://res.cloudinary.com/...
+ *                     publicId:
+ *                       type: string
+ *                       example: chat-app/avatars/...
+ *       400:
+ *         description: Không có file được upload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: No file uploaded
+ *       401:
+ *         description: Không có quyền truy cập
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Không tìm thấy người dùng
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Lỗi server
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     User:
+ *       type: object
+ *       properties:
+ *         _id:
+ *           type: string
+ *         username:
+ *           type: string
+ *         email:
+ *           type: string
+ *         avatar:
+ *           type: object
+ *           properties:
+ *             url:
+ *               type: string
+ *             publicId:
+ *               type: string
+ *         status:
+ *           type: string
+ *           enum: [online, offline]
+ *         lastSeen:
+ *           type: string
+ *           format: date-time
+ *         friends:
+ *           type: array
+ *           items:
+ *             type: string
+ * 
+ *     FriendRequest:
+ *       type: object
+ *       properties:
+ *         _id:
+ *           type: string
+ *         sender:
+ *           $ref: '#/components/schemas/User'
+ *         receiver:
+ *           $ref: '#/components/schemas/User'
+ *         status:
+ *           type: string
+ *           enum: [pending, accepted, rejected]
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ * 
+ *     Error:
+ *       type: object
+ *       properties:
+ *         message:
+ *           type: string
  */ 

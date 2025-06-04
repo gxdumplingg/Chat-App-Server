@@ -139,10 +139,10 @@
 
 /**
  * @swagger
- * /auth/verify-token:
+ * /auth/verify:
  *   get:
- *     summary: Xác thực JWT token
  *     tags: [Authentication]
+ *     summary: Xác thực token
  *     security:
  *       - bearerAuth: []
  *     responses:
@@ -151,13 +151,32 @@
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/User'
+ *               type: object
+ *               properties:
+ *                 valid:
+ *                   type: boolean
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     username:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     avatar:
+ *                       type: string
  *       401:
- *         description: Token không hợp lệ hoặc hết hạn
+ *         description: Token không hợp lệ hoặc không được cung cấp
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Error'
+ *               type: object
+ *               properties:
+ *                 valid:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
  */
 
 /**

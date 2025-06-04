@@ -68,19 +68,55 @@
  *       type: object
  *       required:
  *         - conversationId
- *         - text
+ *         - messageType
+ *       oneOf:
+ *         - required:
+ *             - text
+ *           properties:
+ *             messageType:
+ *               enum: [text]
+ *         - required:
+ *             - attachments
+ *           properties:
+ *             messageType:
+ *               enum: [image, video, audio, file]
+ *         - required:
+ *             - emojiData
+ *           properties:
+ *             messageType:
+ *               enum: [emoji]
  *       properties:
  *         conversationId:
  *           type: string
  *           description: ID của cuộc trò chuyện
  *         text:
  *           type: string
- *           description: Nội dung tin nhắn
+ *           description: Nội dung tin nhắn (bắt buộc cho messageType text)
  *         messageType:
  *           type: string
  *           enum: [text, image, video, audio, file, emoji]
  *           default: text
  *           description: Loại tin nhắn
+ *         attachments:
+ *           type: array
+ *           items:
+ *             type: string
+ *           description: Danh sách file đính kèm (bắt buộc cho messageType image, video, audio, file)
+ *         emojiData:
+ *           type: object
+ *           description: Dữ liệu emoji (bắt buộc cho messageType emoji)
+ *           required:
+ *             - emoji
+ *           properties:
+ *             emoji:
+ *               type: string
+ *               description: Emoji được chọn
+ *             skinTone:
+ *               type: string
+ *               description: Màu da của emoji (nếu có)
+ *             isCustomEmoji:
+ *               type: boolean
+ *               description: Có phải emoji tùy chỉnh không
  * 
  *     ReactToMessageRequest:
  *       type: object
@@ -194,10 +230,10 @@
  *         description: Lỗi server
  * 
  * /message/{messageId}/react:
- *   post:
+ *   put:
  *     tags:
  *       - Messages
- *     summary: Thêm reaction cho tin nhắn
+ *     summary: Thêm hoặc cập nhật reaction cho tin nhắn
  *     description: Thêm hoặc cập nhật emoji reaction cho tin nhắn
  *     security:
  *       - bearerAuth: []
@@ -216,7 +252,7 @@
  *             $ref: '#/components/schemas/ReactToMessageRequest'
  *     responses:
  *       200:
- *         description: Thêm reaction thành công
+ *         description: Thêm/cập nhật reaction thành công
  *         content:
  *           application/json:
  *             schema:

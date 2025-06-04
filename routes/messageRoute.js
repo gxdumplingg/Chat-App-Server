@@ -22,5 +22,8 @@ module.exports = (io) => {
     // Đánh dấu tin nhắn đã đọc
     router.put('/:id/read', messageController.markMessageAsRead);
 
+    // React to message with emoji
+    router.put('/:messageId/react', messageController.reactToMessage);
+
     return router;
 };

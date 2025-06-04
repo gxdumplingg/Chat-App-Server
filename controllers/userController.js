@@ -6,113 +6,6 @@ const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const Message = require('../models/Message');
 
-exports.registerLoad = async (req, res) => {
-    try {
-        res.status(200).json({ message: "Register endpoint is working" });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-};
-
-exports.register = async (req, res) => {
-    try {
-        const { username, email, password } = req.body;
-
-        // Validate input
-        if (!username || !email || !password) {
-            return res.status(400).json({ message: 'Please provide all required fields' });
-        }
-
-        // Check if user already exists
-        const existingUser = await User.findOne({
-            $or: [{ email }, { username }]
-        });
-
-        if (existingUser) {
-            return res.status(400).json({ message: 'User already exists' });
-        }
-
-        // Hash password
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        // Create new user
-        const user = new User({
-            username,
-            email,
-            password: hashedPassword,
-            status: 'offline'
-        });
-
-        await user.save();
-
-        // Generate JWT token
-        const token = jwt.sign(
-            { userId: user._id },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        res.status(201).json({
-            message: 'Registration successful',
-            token,
-            user: {
-                _id: user._id,
-                username: user.username,
-                email: user.email,
-                avatar: user.avatar
-            }
-        });
-    } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({ message: 'Error registering user' });
-    }
-};
-
-// Login user
-exports.login = async (req, res) => {
-    try {
-        const { email, password } = req.body;
-
-        // Find user
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials' });
-        }
-
-        // Check password
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid credentials' });
-        }
-
-        // Update status to online
-        user.status = 'online';
-        await user.save();
-
-        // Generate JWT token
-        const token = jwt.sign(
-            { userId: user._id },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        res.json({
-            message: 'Login successful',
-            token,
-            user: {
-                _id: user._id,
-                username: user.username,
-                email: user.email,
-                avatar: user.avatar,
-                status: user.status
-            }
-        });
-    } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ message: 'Error logging in' });
-    }
-};
 
 // Search users
 exports.searchUsers = async (req, res) => {
@@ -150,6 +43,7 @@ exports.getFriends = async (req, res) => {
 exports.addFriend = async (req, res) => {
     try {
         const { friendId } = req.body;
+        const userId = req.user._id;
 
         // Kiểm tra friendId có tồn tại
         const friend = await User.findById(friendId);
@@ -158,14 +52,35 @@ exports.addFriend = async (req, res) => {
         }
 
         // Kiểm tra đã là bạn chưa
-        const user = await User.findById(req.user._id);
+        const user = await User.findById(userId);
         if (user.friends.includes(friendId)) {
             return res.status(400).json({ message: 'Already friends' });
         }
 
-        // Thêm bạn
+        // Kiểm tra đã có friend request chưa
+        const existingFriendRequest = await Friend.findOne({
+            $or: [
+                { sender: userId, receiver: friendId },
+                { sender: friendId, receiver: userId }
+            ]
+        });
+
+        if (existingFriendRequest) {
+            return res.status(400).json({ message: 'Friend request already exists' });
+        }
+
+        // Tạo friend request mới
+        const friendRequest = new Friend({
+            sender: userId,
+            receiver: friendId,
+            status: 'accepted' // Tự động accept friend request
+        });
+
+        await friendRequest.save();
+
+        // Thêm bạn vào danh sách friends của cả hai user
         user.friends.push(friendId);
-        friend.friends.push(req.user._id);
+        friend.friends.push(userId);
 
         await user.save();
         await friend.save();
@@ -174,46 +89,71 @@ exports.addFriend = async (req, res) => {
         const io = req.app.get('io');
         io.to(friendId.toString()).emit('newFriend', {
             friend: {
-                _id: req.user._id,
-                username: req.user.username,
-                email: req.user.email,
-                avatar: req.user.avatar
+                _id: user._id,
+                username: user.username,
+                email: user.email,
+                avatar: user.avatar
             }
         });
 
-        res.json({ message: 'Friend added successfully' });
+        res.json({
+            message: 'Friend added successfully',
+            friendRequest
+        });
     } catch (error) {
+        console.error('Add friend error:', error);
         res.status(500).json({ message: error.message });
     }
 };
 
-// Remove friend
-exports.removeFriend = async (req, res) => {
+// Unfriend
+exports.unfriend = async (req, res) => {
     try {
+        const userId = req.user._id;
         const { friendId } = req.params;
 
-        // Kiểm tra friendId có tồn tại
+        // Xóa userId khỏi friends của friend và ngược lại
+        const user = await User.findById(userId);
         const friend = await User.findById(friendId);
-        if (!friend) {
+
+        if (!user || !friend) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Xóa bạn
-        const user = await User.findById(req.user._id);
+        // Cập nhật danh sách bạn bè của cả hai người dùng
         user.friends = user.friends.filter(id => id.toString() !== friendId);
-        friend.friends = friend.friends.filter(id => id.toString() !== req.user._id);
+        friend.friends = friend.friends.filter(id => id.toString() !== userId.toString());
 
-        await user.save();
-        await friend.save();
+        // Lưu thay đổi cho cả hai người dùng
+        await Promise.all([
+            user.save(),
+            friend.save()
+        ]);
 
-        // Gửi thông báo realtime
-        const io = req.app.get('io');
-        io.to(friendId.toString()).emit('friendRemoved', {
-            friendId: req.user._id
+        // Xóa request (Friend document) nếu tồn tại
+        await Friend.deleteOne({
+            $or: [
+                { sender: userId, receiver: friendId },
+                { sender: friendId, receiver: userId }
+            ]
         });
 
-        res.json({ message: 'Friend removed successfully' });
+        // Gửi thông báo realtime cho cả hai người dùng
+        const io = req.app.get('io');
+        io.to(friendId.toString()).emit('friendRemoved', {
+            userId: userId.toString()
+        });
+        io.to(userId.toString()).emit('friendRemoved', {
+            userId: friendId.toString()
+        });
+
+        res.json({
+            message: 'Unfriend successfully',
+            updatedUser: user,
+            updatedFriend: friend
+        });
     } catch (error) {
+        console.error('Unfriend error:', error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -417,7 +357,18 @@ exports.acceptFriendRequest = async (req, res) => {
         // Cập nhật trạng thái
         friendRequest.status = 'accepted';
         await friendRequest.save();
-
+        const sender = await User.findById(friendRequest.sender);
+        const receiver = await User.findById(friendRequest.receiver);
+        if (sender && receiver) {
+            if (!sender.friends.includes(receiver._id)) {
+                sender.friends.push(receiver._id);
+                await sender.save();
+            }
+            if (!receiver.friends.includes(sender._id)) {
+                receiver.friends.push(sender._id);
+                await receiver.save();
+            }
+        }
         // Gửi thông báo realtime
         req.app.get('io').to(friendRequest.sender.toString()).emit('friendRequestAccepted', {
             requestId: friendRequest._id,
@@ -425,6 +376,23 @@ exports.acceptFriendRequest = async (req, res) => {
         });
 
         res.json(friendRequest);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.rejectFriendRequest = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const friendRequest = await Friend.findById(req.params.id);
+        if (!friendRequest) {
+            return res.status(404).json({ message: 'Friend request not found' });
+        }
+        if (friendRequest.receiver.toString() !== userId) {
+            return res.status(403).json({ message: 'Not authorized to reject this request' });
+        }
+        await friendRequest.deleteOne();
+        res.json({ message: 'Friend request rejected and deleted' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -441,6 +409,104 @@ exports.getFriendRequests = async (req, res) => {
         res.json(friendRequests);
     } catch (error) {
         res.status(500).json({ message: error.message });
+    }
+};
+
+// Get all users
+exports.getAllUsers = async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const search = req.query.search || '';
+        const skip = (page - 1) * limit;
+
+        // Tạo query để tìm kiếm
+        const query = {
+            $or: [
+                { username: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } }
+            ],
+            _id: { $ne: req.user._id } // Loại bỏ user hiện tại
+        };
+
+        // Lấy tổng số users
+        const total = await User.countDocuments(query);
+
+        // Lấy danh sách users
+        const users = await User.find(query)
+            .select('_id username email createdAt avatar status lastSeen')
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+
+        res.json({
+            users,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Get all users error:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Update user profile
+exports.updateProfile = async (req, res) => {
+    try {
+        const { username } = req.body;
+        const userId = req.user._id;
+
+        // Validate username
+        if (!username || username.trim().length < 3) {
+            return res.status(400).json({
+                message: 'Username must be at least 3 characters long'
+            });
+        }
+
+        // Kiểm tra username đã tồn tại chưa
+        const existingUser = await User.findOne({
+            username,
+            _id: { $ne: userId }
+        });
+
+        if (existingUser) {
+            return res.status(400).json({
+                message: 'Username already exists'
+            });
+        }
+
+        // Cập nhật thông tin
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            {
+                username: username.trim()
+            },
+            { new: true }
+        ).select('-password');
+
+        if (!updatedUser) {
+            return res.status(404).json({
+                message: 'User not found'
+            });
+        }
+
+        // Emit socket event for profile update
+        req.app.get('io').emit('userProfileUpdated', {
+            userId: updatedUser._id,
+            username: updatedUser.username
+        });
+
+        res.json({
+            message: 'Profile updated successfully',
+            user: updatedUser
+        });
+    } catch (error) {
+        console.error('Update profile error:', error);
+        res.status(500).json({ message: 'Error updating profile' });
     }
 };
 
