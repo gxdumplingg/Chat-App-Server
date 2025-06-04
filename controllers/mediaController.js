@@ -45,7 +45,8 @@ const generateVideoThumbnail = async (videoPath) => {
         // Sử dụng ffmpeg để tạo thumbnail (cần cài đặt ffmpeg)
         const { exec } = require('child_process');
         await new Promise((resolve, reject) => {
-            exec(`ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 "${thumbnailPath}"`, (error) => {
+            const command = `ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 "${thumbnailPath}"`;
+            exec(command, (error) => {
                 if (error) {
                     console.error('Error generating thumbnail:', error);
                     reject(error);
@@ -124,8 +125,11 @@ exports.uploadMedia = async (req, res) => {
         let shouldDeleteOriginal = true;
         tempFiles.push(filePath);
 
-        // Xử lý file dựa trên loại
-        if (req.file.mimetype.startsWith('image/')) {
+        // Kiểm tra loại file trước khi xử lý
+        const isImage = req.file.mimetype.startsWith('image/');
+        const isVideo = req.file.mimetype.startsWith('video/');
+
+        if (isImage) {
             try {
                 const optimizationResult = await optimizeImage(filePath);
                 filePath = optimizationResult.path;
@@ -135,16 +139,14 @@ exports.uploadMedia = async (req, res) => {
                 }
             } catch (optimizeError) {
                 console.error('Error optimizing image:', optimizeError);
-                // Tiếp tục với file gốc nếu có lỗi
             }
-        } else if (req.file.mimetype.startsWith('video/')) {
-            // Tạo thumbnail cho video
+        } else if (isVideo) {
+            // Không tối ưu hóa video, chỉ tạo thumbnail
             thumbnailPath = await generateVideoThumbnail(filePath);
             if (thumbnailPath) {
                 tempFiles.push(thumbnailPath);
             }
-            // Không tối ưu hóa video
-            shouldDeleteOriginal = false;
+            shouldDeleteOriginal = false; // Giữ lại file video gốc
         }
 
         // Calculate file hash before upload
@@ -238,8 +240,11 @@ exports.uploadMultipleMedia = async (req, res) => {
                 let optimizedPath = null;
                 let shouldDeleteOriginal = true;
 
-                // Xử lý file dựa trên loại
-                if (file.mimetype.startsWith('image/')) {
+                // Kiểm tra loại file trước khi xử lý
+                const isImage = file.mimetype.startsWith('image/');
+                const isVideo = file.mimetype.startsWith('video/');
+
+                if (isImage) {
                     try {
                         const optimizationResult = await optimizeImage(filePath);
                         filePath = optimizationResult.path;
@@ -250,11 +255,13 @@ exports.uploadMultipleMedia = async (req, res) => {
                     } catch (optimizeError) {
                         console.error('Error optimizing image:', optimizeError);
                     }
-                } else if (file.mimetype.startsWith('video/')) {
+                } else if (isVideo) {
+                    // Không tối ưu hóa video, chỉ tạo thumbnail
                     thumbnailPath = await generateVideoThumbnail(filePath);
                     if (thumbnailPath) {
                         fileTempFiles.push(thumbnailPath);
                     }
+                    shouldDeleteOriginal = false; // Giữ lại file video gốc
                 }
 
                 // Calculate file hash before upload
