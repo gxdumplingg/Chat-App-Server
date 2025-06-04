@@ -42,6 +42,9 @@ router.get("/chat/users/:userId", auth, userController.getChatUsers);
 // Update user avatar
 router.put('/avatar', auth, upload.single('avatar'), userController.updateAvatar);
 
+// Update user profile
+router.put('/profile', auth, userController.updateProfile);
+
 // Update user status
 router.put('/status', auth, userController.updateStatus);
 

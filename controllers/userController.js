@@ -454,3 +454,59 @@ exports.getAllUsers = async (req, res) => {
     }
 };
 
+// Update user profile
+exports.updateProfile = async (req, res) => {
+    try {
+        const { username } = req.body;
+        const userId = req.user._id;
+
+        // Validate username
+        if (!username || username.trim().length < 3) {
+            return res.status(400).json({
+                message: 'Username must be at least 3 characters long'
+            });
+        }
+
+        // Kiểm tra username đã tồn tại chưa
+        const existingUser = await User.findOne({
+            username,
+            _id: { $ne: userId }
+        });
+
+        if (existingUser) {
+            return res.status(400).json({
+                message: 'Username already exists'
+            });
+        }
+
+        // Cập nhật thông tin
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            {
+                username: username.trim()
+            },
+            { new: true }
+        ).select('-password');
+
+        if (!updatedUser) {
+            return res.status(404).json({
+                message: 'User not found'
+            });
+        }
+
+        // Emit socket event for profile update
+        req.app.get('io').emit('userProfileUpdated', {
+            userId: updatedUser._id,
+            username: updatedUser.username
+        });
+
+        res.json({
+            message: 'Profile updated successfully',
+            user: updatedUser
+        });
+    } catch (error) {
+        console.error('Update profile error:', error);
+        res.status(500).json({ message: 'Error updating profile' });
+    }
+};
+
