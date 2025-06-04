@@ -137,8 +137,6 @@
  *             properties:
  *               username:
  *                 type: string
- *               avatar:
- *                 type: string
  *     responses:
  *       200:
  *         description: Cập nhật thành công
