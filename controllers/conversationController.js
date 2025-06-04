@@ -41,7 +41,7 @@ exports.getConversations = async (req, res) => {
 // Tạo cuộc trò chuyện mới
 exports.createConversation = async (req, res) => {
     try {
-        const { participants, type = 'group' } = req.body;
+        let { participants, type } = req.body;
         const userId = req.user._id;
         const io = req.app.get('io');
 
@@ -55,7 +55,7 @@ exports.createConversation = async (req, res) => {
             participants.push(userId.toString());
         }
 
-        // Tạo conversation mới
+        type = participants.length > 2 ? 'group' : 'private';
         const conversation = new Conversation({
             participants,
             type,
