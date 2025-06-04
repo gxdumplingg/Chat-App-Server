@@ -113,4 +113,42 @@ exports.auth = async (req, res, next) => {
         console.error('Auth middleware error:', error);
         res.status(401).json({ message: 'Invalid token' });
     }
+};
+
+// Verify token API
+exports.verifyToken = async (req, res) => {
+    try {
+        const token = req.header('Authorization')?.replace('Bearer ', '');
+        if (!token) {
+            return res.status(401).json({
+                valid: false,
+                message: 'No token provided'
+            });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId);
+        if (!user) {
+            return res.status(401).json({
+                valid: false,
+                message: 'User not found'
+            });
+        }
+
+        res.json({
+            valid: true,
+            user: {
+                id: user._id,
+                username: user.username,
+                email: user.email,
+                avatar: user.avatar
+            }
+        });
+    } catch (error) {
+        console.error('Token verification error:', error);
+        res.status(401).json({
+            valid: false,
+            message: 'Invalid token'
+        });
+    }
 }; 

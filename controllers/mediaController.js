@@ -138,10 +138,13 @@ exports.uploadMedia = async (req, res) => {
                 // Tiếp tục với file gốc nếu có lỗi
             }
         } else if (req.file.mimetype.startsWith('video/')) {
+            // Tạo thumbnail cho video
             thumbnailPath = await generateVideoThumbnail(filePath);
             if (thumbnailPath) {
                 tempFiles.push(thumbnailPath);
             }
+            // Không tối ưu hóa video
+            shouldDeleteOriginal = false;
         }
 
         // Calculate file hash before upload
